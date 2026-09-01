@@ -43,6 +43,7 @@ export class VulkanRenderer{
                 createGraphicsPipeline();
                 createCommandPool();
                 createVertexBuffer();
+                createIndexBuffer();
                 createCommandBuffers();
                 createSyncObjects();
                 logger.log(LogLevel::INFO, "Vulkan renderer initialized");
@@ -545,10 +546,11 @@ export class VulkanRenderer{
         commandBuffer.beginRendering(renderingInfo);
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
         commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0}); 
+        commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
         commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-        commandBuffer.draw(3, 1, 0, 0);
+        commandBuffer.drawIndexed(static_cast<u32>(mesh.getIndices().size()), 1, 0, 0, 0);
 
         commandBuffer.endRendering();
 
@@ -665,6 +667,24 @@ export class VulkanRenderer{
 
         copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
     }
+
+    void createIndexBuffer() {
+
+         vk::DeviceSize bufferSize = sizeof(u16) * mesh.getIndices().size();
+
+        auto [stagingBuffer, stagingBufferMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+        memcpy(dataStaging, mesh.getIndices().data(), bufferSize);
+        stagingBufferMemory.unmapMemory();
+
+        std::tie(indexBuffer, indexBufferMemory) =
+            createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+        copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+
+    }
    
 
    std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
@@ -713,6 +733,9 @@ export class VulkanRenderer{
     vk::raii::CommandPool  commandPool = nullptr;
     vk::raii::Buffer vertexBuffer = nullptr;
     vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+
+    vk::raii::Buffer indexBuffer = nullptr;
+    vk::raii::DeviceMemory  indexBufferMemory = nullptr;
     std::vector<vk::raii::CommandBuffer> commandBuffers;
 
     std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
