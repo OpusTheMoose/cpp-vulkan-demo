@@ -14,6 +14,8 @@ import logger;
 import types;
 import window;
 import file;
+import vertex;
+import mesh;
 
 const std::vector<char const*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -25,6 +27,7 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
+constexpr i32 FRAMES_IN_FLIGHT = 2;
 export class VulkanRenderer{
     public:
         VulkanRenderer() {}
@@ -39,7 +42,8 @@ export class VulkanRenderer{
                 createImageViews();
                 createGraphicsPipeline();
                 createCommandPool();
-                createCommandBuffer();
+                createVertexBuffer();
+                createCommandBuffers();
                 createSyncObjects();
                 logger.log(LogLevel::INFO, "Vulkan renderer initialized");
             }
@@ -54,15 +58,38 @@ export class VulkanRenderer{
             device.waitIdle();
         }
 
+        auto recreateSwapChain() -> void {
+            waitIdle();
+
+            cleanupSwapChain();
+
+            createSwapChain();
+            createImageViews();
+        }
+
         auto drawFrame() -> void {
-            auto fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
+            auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
 			    throw std::runtime_error("failed to wait for fence!");
 		    }
-		    device.resetFences(*drawFence);
+		    device.resetFences(*inFlightFences[frameIndex]);
 
-            auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
+            auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
+            if (result == vk::Result::eErrorOutOfDateKHR)
+            {
+                recreateSwapChain();
+                return;
+            }
+            if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR)
+            {
+                assert(result == vk::Result::eTimeout || result == vk::Result::eNotReady);
+                throw std::runtime_error("Failed to acquire swap chain image!");
+            }
+
+            device.resetFences(*inFlightFences[frameIndex]);
+
+            commandBuffers[frameIndex].reset();
             recordCommandBuffer(imageIndex);
 
             graphicsQueue.waitIdle();
@@ -70,26 +97,35 @@ export class VulkanRenderer{
             vk::PipelineStageFlags waitDestinationStageMask( vk::PipelineStageFlagBits::eColorAttachmentOutput );
             vk::SubmitInfo   submitInfo = {};
             submitInfo.setWaitSemaphoreCount(1)
-            .setPWaitSemaphores(&*presentCompleteSemaphore)
+            .setPWaitSemaphores(&*presentCompleteSemaphores[frameIndex])
             .setPWaitDstStageMask(&waitDestinationStageMask)
             .setCommandBufferCount(1)
-            .setPCommandBuffers(&*commandBuffer)
+            .setPCommandBuffers(&*commandBuffers[frameIndex])
             .setSignalSemaphoreCount(1)
-            .setPSignalSemaphores(&*renderFinishedSemaphore);
+            .setPSignalSemaphores(&*renderFinishedSemaphores[imageIndex]);
 
-            graphicsQueue.submit(submitInfo, *drawFence);
+            graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
 
             vk::PresentInfoKHR PresentInfoKHR = {};
             PresentInfoKHR.setWaitSemaphoreCount(1)
-            .setPWaitSemaphores(&*renderFinishedSemaphore)
+            .setPWaitSemaphores(&*renderFinishedSemaphores[imageIndex])
             .setSwapchainCount(1)
             .setPSwapchains(&*swapChain)
             .setPImageIndices(&imageIndex);
         
             result = graphicsQueue.presentKHR(PresentInfoKHR);
+            if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || window->isFramebufferResized())
+            {
+                window->setFramebufferResized(false);
+                recreateSwapChain();
+            }
+            else
+            {
+                // There are no other success codes than eSuccess; on any error code, presentKHR already threw an exception.
+                assert(result == vk::Result::eSuccess);
+            }
+            frameIndex = (frameIndex + 1)  % FRAMES_IN_FLIGHT;
             
-            
-
         }
 
 
@@ -303,11 +339,6 @@ export class VulkanRenderer{
     swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
     swapChainImages = swapChain.getImages();
 
-    logger.log(LogLevel::INFO, "Swapchain created successfully");
-
-
-
-
     }
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
@@ -385,7 +416,16 @@ export class VulkanRenderer{
 
         vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStagInfo, fragShaderStagInfo};
 
+        auto  bindingDescription    = Vertex::getBindingDescription();
+        auto  attributeDescriptions = Vertex::getAttributeDescriptions();
+
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+        vertexInputInfo.setVertexBindingDescriptionCount(1)
+        .setPVertexBindingDescriptions(&bindingDescription)
+        .setVertexAttributeDescriptionCount(static_cast<u32>(attributeDescriptions.size()))
+        .setPVertexAttributeDescriptions(attributeDescriptions.data());
+
+
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
         inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
         vk::PipelineViewportStateCreateInfo viewportState;
@@ -469,18 +509,19 @@ export class VulkanRenderer{
         commandPool = vk::raii::CommandPool(device, poolInfo);
     }
 
-    auto createCommandBuffer() -> void {
+    auto createCommandBuffers() -> void {
 
         vk::CommandBufferAllocateInfo allocInfo;
         allocInfo.commandPool = commandPool; 
         allocInfo.level = vk::CommandBufferLevel::ePrimary;
-        allocInfo.commandBufferCount = 1;
-        commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
+        allocInfo.commandBufferCount = FRAMES_IN_FLIGHT;
+        commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
 
     }
 
     auto recordCommandBuffer(u32 imageIndex) -> void
     {
+        auto &commandBuffer = commandBuffers[frameIndex];
         commandBuffer.begin({});
         transition_image_layout(imageIndex, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 
             {}, 
@@ -503,6 +544,7 @@ export class VulkanRenderer{
 
         commandBuffer.beginRendering(renderingInfo);
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+        commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0}); 
         commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
@@ -558,16 +600,106 @@ export class VulkanRenderer{
         .setImageMemoryBarrierCount(1)
         .setPImageMemoryBarriers(&barrier);
 
-    commandBuffer.pipelineBarrier2(info);
+    commandBuffers[frameIndex].pipelineBarrier2(info);
     }
 
     
     auto createSyncObjects() -> void {
-        presentCompleteSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
-        renderFinishedSemaphore  = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
-        vk::FenceCreateInfo fenceInfo;
-        fenceInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
-        drawFence                = vk::raii::Fence(device, fenceInfo);
+
+        assert(presentCompleteSemaphores.empty() && renderFinishedSemaphores.empty() && inFlightFences.empty());
+
+		for (size_t i = 0; i < swapChainImages.size(); i++)
+		{
+			renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+		}
+
+		for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
+		{
+			presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+            vk::FenceCreateInfo fenceInfo;
+            fenceInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
+			inFlightFences.emplace_back(device, fenceInfo);
+		}
+      
+    }
+
+    auto cleanupSwapChain() -> void {
+        swapChainImageViews.clear();
+        swapChain = nullptr;
+    }
+
+    auto copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & dstBuffer, vk::DeviceSize size)
+    {
+        vk::CommandBufferAllocateInfo allocInfo = {};
+        allocInfo.setCommandPool(commandPool)
+        .setLevel(vk::CommandBufferLevel::ePrimary)
+        .setCommandBufferCount(1);
+        vk::raii::CommandBuffer commandCopyBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
+        vk::CommandBufferBeginInfo info = {};
+        info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+        commandCopyBuffer.begin(info);
+
+        commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, vk::BufferCopy(0, 0, size));
+        commandCopyBuffer.end();
+
+        vk::SubmitInfo submitInfo = {};
+        submitInfo.setCommandBufferCount(1)
+        .setPCommandBuffers(&*commandCopyBuffer);
+        graphicsQueue.submit(submitInfo, nullptr);
+        graphicsQueue.waitIdle();
+    }
+
+    void createVertexBuffer()
+    {
+        vk::DeviceSize bufferSize = sizeof(Vertex) * mesh.getVertices().size();
+
+        auto [stagingBuffer, stagingBufferMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+        memcpy(dataStaging, mesh.getVertices().data(), bufferSize);
+        stagingBufferMemory.unmapMemory();
+
+        std::tie(vertexBuffer, vertexBufferMemory) =
+            createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+    }
+   
+
+   std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
+    {
+        vk::BufferCreateInfo   bufferInfo = {};
+        bufferInfo.setSize(size)
+        .setUsage(usage)
+        .setSharingMode(vk::SharingMode::eExclusive);
+
+
+        vk::raii::Buffer       buffer          = vk::raii::Buffer(device, bufferInfo);
+        vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
+        vk::MemoryAllocateInfo allocInfo = {};
+        allocInfo.setAllocationSize(memRequirements.size)
+        .setMemoryTypeIndex(findMemoryType(memRequirements.memoryTypeBits, properties));
+        vk::raii::DeviceMemory bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
+        buffer.bindMemory(*bufferMemory, 0);
+        return {std::move(buffer), std::move(bufferMemory)};
+    }
+
+
+    u32 findMemoryType(u32 typeFilter, vk::MemoryPropertyFlags properties)
+    {
+
+        vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+        {
+            if ((typeFilter & (1 << i))  && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            {
+                return i;
+            }
+        }
+
+        throw std::runtime_error("failed to find suitable memory type!");
+
     }
 
     vk::raii::SurfaceKHR surface = nullptr; 
@@ -579,13 +711,17 @@ export class VulkanRenderer{
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline graphicsPipeline = nullptr;
     vk::raii::CommandPool  commandPool = nullptr;
-    vk::raii::CommandBuffer commandBuffer = nullptr;
-    vk::raii::Semaphore presentCompleteSemaphore = nullptr;
-    vk::raii::Semaphore renderFinishedSemaphore  = nullptr;
-    vk::raii::Fence     drawFence                = nullptr;
+    vk::raii::Buffer vertexBuffer = nullptr;
+    vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+    std::vector<vk::raii::CommandBuffer> commandBuffers;
+
+    std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
+    std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
+    std::vector<vk::raii::Fence> inFlightFences;
 
 
     u32 queueIndex = 0;
+    u32 frameIndex = 0;
 
     vk::raii::SwapchainKHR swapChain = nullptr;
     std::vector<vk::Image> swapChainImages;
@@ -596,5 +732,6 @@ export class VulkanRenderer{
 
     Logger logger;
     Window* window;
+    Mesh mesh;
 
 };

@@ -49,6 +49,9 @@ export class EventManager {
                         break;
                     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                         window->setWindowOpen(false);
+                    case SDL_EVENT_WINDOW_RESIZED:
+                        window->setFramebufferResized(true);
+                        
                         
 
                 }

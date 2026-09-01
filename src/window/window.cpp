@@ -31,13 +31,12 @@ export class Window {
                 }
 
                this->sdl_window = std::unique_ptr<SDL_Window, SDL_WindowDeleter>(
-                                SDL_CreateWindow(title.c_str(), this->width, this->height, SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_VULKAN));
-
-
+                SDL_CreateWindow(title.c_str(), this->width, this->height, 
+                SDL_WINDOW_ALWAYS_ON_TOP | 
+                SDL_WINDOW_RESIZABLE | 
+                SDL_WINDOW_VULKAN));
 
                 if (!this->sdl_window.get()) throw std::runtime_error(std::string("Failed to create window") + SDL_GetError());
-         
-
             }
 
             catch(const std::exception& e)
@@ -46,14 +45,14 @@ export class Window {
                 return;
             }
 
-
-
             logger.log(LogLevel::INFO, "Window created successfully");
 
         }
-        auto present() -> void {
-
-
+        auto isFramebufferResized() -> bool {
+            return resized;
+        }
+        auto setFramebufferResized(bool resized) -> void {
+            this->resized = resized;
         }
         auto setWindowOpen(bool isOpen) -> void { this->isOpen = isOpen; }
         auto isWindowOpen() -> bool {return this->isOpen; }
@@ -75,6 +74,7 @@ export class Window {
         
         u32 width, height;
         bool isOpen = true;
+        bool resized = false;
 
         Logger logger;
 };
