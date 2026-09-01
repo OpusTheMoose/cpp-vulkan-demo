@@ -1,0 +1,54 @@
+cmake_minimum_required(VERSION 4.4.2)
+set(CMAKE_CXX_COMPILER clang++)
+project(game CXX)
+include(FetchContent)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+find_package(Vulkan REQUIRED)
+
+FetchContent_Declare(SDL3 
+        URL https://github.com/libsdl-org/SDL/releases/download/release-3.2.20/SDL3-3.2.20.tar.gz
+        
+)
+FetchContent_MakeAvailable(SDL3)
+
+find_program(SLANGC_EXECUTABLE slangc REQUIRED)
+
+function (add_slang_shader_target TARGET)
+  cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
+  set (SHADERS_DIR ${CMAKE_CURRENT_LIST_DIR}/src/shaders)
+  set (ENTRY_POINTS -entry vertMain -entry fragMain)
+  add_custom_command (
+          OUTPUT ${SHADERS_DIR}
+          COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADERS_DIR}
+  )
+  add_custom_command (
+          OUTPUT  ${SHADERS_DIR}/slang.spv
+          COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o slang.spv
+          WORKING_DIRECTORY ${SHADERS_DIR}
+          DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES}
+          COMMENT "Compiling Slang Shaders"
+          VERBATIM
+  )
+  add_custom_target (${TARGET} DEPENDS ${SHADERS_DIR}/slang.spv)
+endfunction()
+
+add_slang_shader_target(slang_shaders SOURCES ${CMAKE_CURRENT_LIST_DIR}/src/shaders/triangle.slang)
+add_executable(game main.cpp  ) 
+
+
+
+target_sources(game PUBLIC FILE_SET CXX_MODULES FILES  src/utils/types.cpp  src/window/window.cpp src/utils/logger.cpp src/window/event.cpp src/application/app.cpp
+src/renderer/vulkan_renderer.cpp src/utils/file.cpp)
+target_compile_options(game PRIVATE -Wall -Wextra -Wpedantic -Werror -fsanitize=address -g -O0 )
+target_link_options(game PRIVATE -fsanitize=address)
+        
+target_link_libraries(game PUBLIC SDL3::SDL3 Vulkan::Vulkan)
+add_dependencies(game slang_shaders)
+include(CTest)
+enable_testing()
+
