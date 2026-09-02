@@ -21,9 +21,9 @@ export class Application {
             glm::vec3(0.0f, 0.0f, 0.0f), 
             glm::vec2(800.0, 600.0), 
             "OrbitCamera"));
-           
 
-          
+            camera_controller.setActiveCamera("OrbitCamera");
+
         }
         void loop() {
            while (window->isWindowOpen())
@@ -38,8 +38,8 @@ export class Application {
 
                 i32 w, h;
                 SDL_GetWindowSize(window->getSDLWindow(), &w, &h);
-                camera_controller.getCamera("OrbitCamera").update(glm::vec2(w, h));
-                renderer.drawFrame(camera_controller.getCamera("OrbitCamera"));
+                camera_controller.getActiveCamera()->update(glm::vec2(w, h));
+                renderer.drawFrame(*camera_controller.getActiveCamera());
                 
             }
             renderer.waitIdle();

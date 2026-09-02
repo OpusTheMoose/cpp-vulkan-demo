@@ -1,4 +1,5 @@
 module;
+#include <cassert>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/geometric.hpp>
@@ -86,12 +87,26 @@ export class CameraController {
           }
 
         }
-        auto getCamera(const std::string &label) -> Camera {
-            return registeredCameras.at(label);
+        auto setActiveCamera(const std::string &camera_label) -> void {
+            this->active_camera = camera_label;
+        }
+        auto getActiveCamera() -> Camera*
+        {
+            return getCamera(active_camera);
+        }
+        auto getCamera(const std::string &label) -> Camera* {
+            auto it = registeredCameras.find(label);
+            if (it == registeredCameras.end()) {
+                logger.log(LogLevel::ERROR, "Camera not found!");
+                return nullptr;
+            }
+            return &it->second;
 
         }
+   
 
     private:
+        std::string active_camera;
         std::unordered_map<std::string, Camera> registeredCameras;
         Logger logger;
 };
