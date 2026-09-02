@@ -5,7 +5,11 @@ module;
 #include "vulkan/vulkan.hpp"
 #include <algorithm>
 #include <stdexcept>
+#include <vector>
 #include <vulkan/vulkan_core.h>
+#include <chrono>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan_raii.hpp>
 
@@ -16,6 +20,7 @@ import window;
 import file;
 import vertex;
 import mesh;
+import camera;
 
 const std::vector<char const*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -40,9 +45,13 @@ export class VulkanRenderer{
                 createLogicalDevice();
                 createSwapChain();
                 createImageViews();
+                createDescriptorSetLayout();
                 createGraphicsPipeline();
                 createCommandPool();
                 createVertexBuffer();
+                createUniformBuffers();
+                createDescriptorPool();
+                createDescriptorSets();
                 createIndexBuffer();
                 createCommandBuffers();
                 createSyncObjects();
@@ -68,7 +77,7 @@ export class VulkanRenderer{
             createImageViews();
         }
 
-        auto drawFrame() -> void {
+        auto drawFrame(Camera camera) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -91,9 +100,12 @@ export class VulkanRenderer{
             device.resetFences(*inFlightFences[frameIndex]);
 
             commandBuffers[frameIndex].reset();
+            
             recordCommandBuffer(imageIndex);
 
             graphicsQueue.waitIdle();
+
+            updateUniformBuffer(camera, frameIndex);
 
             vk::PipelineStageFlags waitDestinationStageMask( vk::PipelineStageFlagBits::eColorAttachmentOutput );
             vk::SubmitInfo   submitInfo = {};
@@ -446,7 +458,7 @@ export class VulkanRenderer{
         rasterizer.rasterizerDiscardEnable = vk::False;
         rasterizer.polygonMode             = vk::PolygonMode::eFill;
         rasterizer.cullMode                = vk::CullModeFlagBits::eBack;
-        rasterizer.frontFace               = vk::FrontFace::eClockwise;
+        rasterizer.frontFace               = vk::FrontFace::eCounterClockwise;
         rasterizer.depthBiasEnable         = vk::False;
         rasterizer.lineWidth               = 1.0f;
 
@@ -465,8 +477,9 @@ export class VulkanRenderer{
         colorBlending.pAttachments = &colorBlendAttachment;
 
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-        pipelineLayoutInfo.setSetLayoutCount(0);
-        pipelineLayoutInfo.setPushConstantRangeCount(0);
+        pipelineLayoutInfo.setSetLayoutCount(1)
+        .setPSetLayouts(&*descriptorSetLayout)
+        .setPushConstantRangeCount(0);
 
         pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
@@ -549,7 +562,8 @@ export class VulkanRenderer{
         commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
         commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-
+        
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
         commandBuffer.drawIndexed(static_cast<u32>(mesh.getIndices().size()), 1, 0, 0, 0);
 
         commandBuffer.endRendering();
@@ -722,20 +736,118 @@ export class VulkanRenderer{
 
     }
 
+    auto createDescriptorSetLayout() -> void {
+        vk::DescriptorSetLayoutBinding uboLayoutBinding = {};
+        uboLayoutBinding.setBinding(0)
+        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+        .setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+
+        vk::DescriptorSetLayoutCreateInfo layoutInfo = {};
+        layoutInfo.setBindingCount(1)
+        .setPBindings(&uboLayoutBinding);
+
+        descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
+
+    }
+
+    auto createUniformBuffers() -> void {
+        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
+        {
+            vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+            auto [buffer, bufferMem]  = createBuffer(
+            bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            uniformBuffers.emplace_back(std::move(buffer));
+            uniformBuffersMemory.emplace_back(std::move(bufferMem));
+            uniformBuffersMapped.emplace_back( uniformBuffersMemory.back().mapMemory(0, bufferSize));
+        }
+    }
+
+    auto updateUniformBuffer(Camera& camera, u32 currentImage) -> void {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time       = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+        UniformBufferObject ubo{};
+        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = camera.getViewMatrix(); 
+        ubo.proj = camera.getProjMatrix();
+
+        memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    }
+
+    auto createDescriptorPool() -> void {
+        vk::DescriptorPoolSize poolSize;
+        poolSize.setType(vk::DescriptorType::eUniformBuffer)
+        .setDescriptorCount(FRAMES_IN_FLIGHT);
+
+        vk::DescriptorPoolCreateInfo poolInfo;
+        poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+        .setMaxSets(FRAMES_IN_FLIGHT)
+        .setPoolSizeCount(1)
+        .setPPoolSizes(&poolSize);
+
+        descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
+        
+
+
+    }
+    auto createDescriptorSets() -> void {
+        std::vector<vk::DescriptorSetLayout> layouts(FRAMES_IN_FLIGHT, *descriptorSetLayout);
+        vk::DescriptorSetAllocateInfo allocInfo;
+        allocInfo.setDescriptorPool(descriptorPool)
+        .setDescriptorSetCount(static_cast<u32>(layouts.size()))
+        .setPSetLayouts(layouts.data());
+
+
+        descriptorSets = device.allocateDescriptorSets(allocInfo);
+
+        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
+        {
+            vk::DescriptorBufferInfo bufferInfo = {};
+            bufferInfo.setBuffer(uniformBuffers[i])
+            .setOffset(0)
+            .setRange(sizeof(UniformBufferObject));
+
+            vk::WriteDescriptorSet   descriptorWrite;
+            descriptorWrite.setDstSet(descriptorSets[i])
+            .setDstBinding(0)
+            .setDstArrayElement(0)
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+            .setPBufferInfo(&bufferInfo);
+
+            device.updateDescriptorSets(descriptorWrite, {});
+                                
+        }
+
+    }
+
     vk::raii::SurfaceKHR surface = nullptr; 
     vk::raii::Queue graphicsQueue = nullptr; 
     vk::raii::Device device = nullptr;
     vk::raii::PhysicalDevice physicalDevice = nullptr;
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
+    vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline graphicsPipeline = nullptr;
     vk::raii::CommandPool  commandPool = nullptr;
     vk::raii::Buffer vertexBuffer = nullptr;
     vk::raii::DeviceMemory vertexBufferMemory = nullptr;
 
+    vk::raii::DescriptorPool descriptorPool = nullptr;
+    std::vector<vk::raii::DescriptorSet> descriptorSets;
+
+    
     vk::raii::Buffer indexBuffer = nullptr;
     vk::raii::DeviceMemory  indexBufferMemory = nullptr;
+
+    //we want as many uniform buffers as frames in flight
+    std::vector<vk::raii::Buffer> uniformBuffers;
+    std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+    std::vector<void*> uniformBuffersMapped;
+
     std::vector<vk::raii::CommandBuffer> commandBuffers;
 
     std::vector<vk::raii::Semaphore> presentCompleteSemaphores;

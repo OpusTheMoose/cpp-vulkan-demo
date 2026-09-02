@@ -8,6 +8,13 @@ module;
 export module event;
 import window;
 import logger;
+import types;
+
+
+struct MouseState {
+    f32 mouse_x, mouse_y = 0;
+    i32 scroll_amount = 0;
+};
 
 export class EventManager {
     public:
@@ -51,7 +58,9 @@ export class EventManager {
                         window->setWindowOpen(false);
                     case SDL_EVENT_WINDOW_RESIZED:
                         window->setFramebufferResized(true);
-                        
+                    case SDL_EVENT_MOUSE_WHEEL:
+                        this->mouse.scroll_amount = e.wheel.y;
+
                         
 
                 }
@@ -71,6 +80,7 @@ export class EventManager {
 
     private:
         std::array<bool, SDL_SCANCODE_COUNT> keys = {false};
+        MouseState mouse;
         Window* window;
         Logger logger;
         
