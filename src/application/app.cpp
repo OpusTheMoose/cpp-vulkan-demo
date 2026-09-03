@@ -13,10 +13,10 @@ import mesh;
 
 export class Application {
     public:
-        Application() {
-            this->window = new Window(800, 600, "Game");
-           event_manager = EventManager(this->window);
-           renderer = VulkanRenderer(*window);
+        Application() : window(800, 600, "Game"), 
+                        event_manager(&window),
+                        renderer(window)
+            {
            camera_controller.registerCamera(
             Camera(glm::vec3(2.0f, 2.0f, 2.0f), 
             glm::vec3(0.0f, 0.0f, 0.0f), 
@@ -33,17 +33,17 @@ export class Application {
 
         }
         void loop() {
-           while (window->isWindowOpen())
+           while (window.isWindowOpen())
             {
                 event_manager.pollEvents();
                 
                 if (event_manager.isKeyPressed("escape"))
                 {
-                    window->setWindowOpen(false);
+                    window.setWindowOpen(false);
                 } 
 
                 i32 w, h;
-                SDL_GetWindowSize(window->getSDLWindow(), &w, &h);
+                SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
                 camera_controller.updateActiveCamera(event_manager);
                 renderer.drawFrame(*camera_controller.getActiveCamera(), meshes);
@@ -52,14 +52,14 @@ export class Application {
             renderer.waitIdle();
             
         }
-        ~Application() {
-            delete this->window;
 
-        }
+        ~Application() = default;
+      
     private:
+        Window window;
+        EventManager event_manager;
         VulkanRenderer renderer;
-        Window* window;
-        EventManager event_manager; 
+         
         CameraController camera_controller;
         std::vector<Mesh> meshes;
 };

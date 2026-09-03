@@ -837,12 +837,13 @@ export class VulkanRenderer{
 
     }
 
-    vk::raii::SurfaceKHR surface = nullptr; 
-    vk::raii::Queue graphicsQueue = nullptr; 
-    vk::raii::Device device = nullptr;
-    vk::raii::PhysicalDevice physicalDevice = nullptr;
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
+
+    vk::raii::SurfaceKHR surface = nullptr; 
+    vk::raii::Queue graphicsQueue = nullptr; 
+    vk::raii::PhysicalDevice physicalDevice = nullptr;
+    vk::raii::Device device = nullptr;
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline graphicsPipeline = nullptr;
