@@ -20,9 +20,9 @@ export class Application {
             Camera(glm::vec3(2.0f, 2.0f, 2.0f), 
             glm::vec3(0.0f, 0.0f, 0.0f), 
             glm::vec2(800.0, 600.0), 
-            "OrbitCamera"));
+            "OrbitCamera"))
+            .setActiveCamera("OrbitCamera");
 
-            camera_controller.setActiveCamera("OrbitCamera");
 
         }
         void loop() {
@@ -32,13 +32,13 @@ export class Application {
                 
                 if (event_manager.isKeyPressed("escape"))
                 {
-                    std::println("Pressed!");
                     window->setWindowOpen(false);
                 } 
 
                 i32 w, h;
                 SDL_GetWindowSize(window->getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
+                camera_controller.updateActiveCamera(event_manager);
                 renderer.drawFrame(*camera_controller.getActiveCamera());
                 
             }
@@ -50,8 +50,8 @@ export class Application {
 
         }
     private:
-        Window *window;
-        EventManager event_manager; 
         VulkanRenderer renderer;
+        Window* window;
+        EventManager event_manager; 
         CameraController camera_controller;
 };

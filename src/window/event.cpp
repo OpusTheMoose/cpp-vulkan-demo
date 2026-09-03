@@ -43,8 +43,10 @@ export class EventManager {
         // Poll events for windowing, keyboard, mouse etc
         auto pollEvents() {
             SDL_Event e;
+            this->mouse.scroll_amount = 0;
             while (SDL_PollEvent(&e))
             {
+                
                 switch (e.type)
                 {
                     // Key up / down
@@ -60,9 +62,6 @@ export class EventManager {
                         window->setFramebufferResized(true);
                     case SDL_EVENT_MOUSE_WHEEL:
                         this->mouse.scroll_amount = e.wheel.y;
-
-                        
-
                 }
             }
         }
@@ -77,6 +76,11 @@ export class EventManager {
             
             return keys.at(key_value);
         }
+
+        auto getMouseState() -> MouseState {
+            return mouse;
+        };
+
 
     private:
         std::array<bool, SDL_SCANCODE_COUNT> keys = {false};
