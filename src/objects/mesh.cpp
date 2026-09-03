@@ -1,7 +1,10 @@
 module;
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/quaternion_transform.hpp>
+#include <glm/gtc/constants.hpp>
 #include <vector>
 #include <glm/matrix.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <vulkan/vulkan_raii.hpp>
 export module mesh;
 import vertex;
@@ -9,17 +12,21 @@ import types;
 
 export class Mesh {
     public:
-        Mesh() {
-         vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
-            };
+        Mesh() = default;
 
-            indices = {
-                0, 1, 2, 2, 3, 0
-            };
+         Mesh(const Mesh&) = delete;
+        Mesh& operator=(const Mesh&) = delete;
+
+        Mesh(Mesh&&) noexcept = default;
+        Mesh& operator=(Mesh&&) noexcept = default;
+       
+        auto upload(std::vector<Vertex> &vertices_, std::vector<u16> &indices_){
+            this->vertices = vertices_;
+            this->indices = indices_;
+        }
+
+        auto setScale(glm::vec3 scale) {
+            this->scale = scale;
         }
 
         std::vector<Vertex> getVertices() {
@@ -29,15 +36,23 @@ export class Mesh {
         std::vector<u16> getIndices() {
             return indices;
         }
+
         auto getModelMatrix() -> glm::mat4 {
-            return glm::identity<glm::mat4>();
+             glm::mat4 model = glm::translate(glm::mat4(1.0f), this->pos);
+            model *= glm::mat4_cast(this->rot);             // apply quaternion rotation
+            model = glm::scale(model, this->scale);
+            return model;
         }
+     
                 
        vk::raii::Buffer vertexBuffer = nullptr;
        vk::raii::DeviceMemory vertexBufferMemory = nullptr; 
        vk::raii::Buffer indexBuffer = nullptr;
        vk::raii::DeviceMemory indexBufferMemory = nullptr;
     private:
+        glm::vec3 pos = {0.0, 0.0, 0.0};
+        glm::vec3 scale = {1.0, 1.0, 1.0};
+        glm::quat rot = {0.0f, 0.0f, 0.0f, 1.0f};
         std::vector<Vertex> vertices;
         std::vector<u16> indices;
 };

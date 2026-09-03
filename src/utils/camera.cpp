@@ -37,7 +37,7 @@ export class Camera {
             this->pos = pos;
             this->center = center;
             this->label = label;
-            view = glm::lookAt(pos, center, glm::vec3(0.0, 0.0 , 1.0));
+            view = glm::lookAt(pos, center, glm::vec3(0.0, 1.0 , 0.0));
             proj = glm::perspective(glm::radians(45.0f), screen_size.x / screen_size.y, 0.1f, 100.0f);
             proj[1][1] *= -1; // Flip Y for vulkan
 
@@ -57,8 +57,8 @@ export class Camera {
      auto getEye() const {
      
         const float x = center.x + radius * cos(polarAngle) * cos(azimuthAngle);
-        const float y = center.y + radius * cos(polarAngle) * sin(azimuthAngle);
-        const float z = center.z + radius * sin(polarAngle);
+        const float z = center.z + radius * cos(polarAngle) * sin(azimuthAngle);
+        const float y = center.y + radius * sin(polarAngle);
 
         return glm::vec3(x, y, z);
     }
@@ -66,7 +66,7 @@ export class Camera {
     auto update(const glm::vec2 screen_size)-> void
     {
         // view = glm::lookAt(pos, lookat, glm::vec3(0.0, 0.0 , 1.0));
-        view = glm::lookAt(getEye(), center, glm::vec3(0.0, 0.0, 1.0));
+        view = glm::lookAt(getEye(), center, glm::vec3(0.0, 1.0, 0.0));
         proj = glm::perspective(glm::radians(45.0f), static_cast<float>(screen_size.x) / static_cast<float>(screen_size.y), 0.1f, 100.0f);
         proj[1][1] *= -1; // Flip Y for vulkan
     }

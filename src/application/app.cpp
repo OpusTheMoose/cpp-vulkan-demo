@@ -1,7 +1,9 @@
 module;
-#include <print>
 #include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
 #include <SDL3/SDL.h>
+#include <iostream>
 export module app;
 import window;
 import event;
@@ -9,6 +11,7 @@ import types;
 import vulkan_renderer;
 import camera;
 import mesh;
+import sphere;
 
 
 export class Application {
@@ -24,10 +27,16 @@ export class Application {
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
 
-           
-            meshes.emplace_back();
+            Sphere new_sphere(1.0, 20);
 
-            for (auto& mesh : meshes) renderer.upload(mesh);
+           
+            meshes.emplace_back(std::move(new_sphere.getMesh()));
+
+             for (auto& mesh : meshes) 
+             {
+                renderer.upload(mesh);
+                std::cout << glm::to_string(mesh.getModelMatrix()) << std::endl;
+             }
             
 
 
