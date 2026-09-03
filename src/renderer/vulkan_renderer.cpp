@@ -10,6 +10,7 @@ module;
 #include <chrono>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan_raii.hpp>
 
@@ -48,11 +49,9 @@ export class VulkanRenderer{
                 createDescriptorSetLayout();
                 createGraphicsPipeline();
                 createCommandPool();
-                createVertexBuffer();
                 createUniformBuffers();
                 createDescriptorPool();
                 createDescriptorSets();
-                createIndexBuffer();
                 createCommandBuffers();
                 createSyncObjects();
                 logger.log(LogLevel::INFO, "Vulkan renderer initialized");
@@ -62,6 +61,10 @@ export class VulkanRenderer{
                 logger.log(LogLevel::CRITICAL, e.what());
 
             }
+        }
+        auto upload(Mesh &mesh) -> void {
+            createVertexBuffer(mesh);
+            createIndexBuffer(mesh);
         }
 
         auto waitIdle() -> void {
@@ -77,7 +80,7 @@ export class VulkanRenderer{
             createImageViews();
         }
 
-        auto drawFrame(Camera camera) -> void {
+        auto drawFrame(Camera camera, std::vector<Mesh> &meshes) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -101,7 +104,7 @@ export class VulkanRenderer{
 
             commandBuffers[frameIndex].reset();
             
-            recordCommandBuffer(imageIndex);
+            recordCommandBuffer(imageIndex, meshes);
 
             graphicsQueue.waitIdle();
 
@@ -476,10 +479,16 @@ export class VulkanRenderer{
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments = &colorBlendAttachment;
 
+        vk::PushConstantRange pushConstantRange = {};
+        pushConstantRange.setStageFlags(vk::ShaderStageFlagBits::eVertex)
+        .setOffset(0)
+        .setSize(sizeof(glm::mat4));
+
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
         pipelineLayoutInfo.setSetLayoutCount(1)
         .setPSetLayouts(&*descriptorSetLayout)
-        .setPushConstantRangeCount(0);
+        .setPushConstantRangeCount(1)
+        .setPPushConstantRanges(&pushConstantRange);
 
         pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
@@ -533,7 +542,7 @@ export class VulkanRenderer{
 
     }
 
-    auto recordCommandBuffer(u32 imageIndex) -> void
+    auto recordCommandBuffer(u32 imageIndex, std::vector<Mesh> &meshes) -> void
     {
         auto &commandBuffer = commandBuffers[frameIndex];
         commandBuffer.begin({});
@@ -558,13 +567,20 @@ export class VulkanRenderer{
 
         commandBuffer.beginRendering(renderingInfo);
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-        commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0}); 
-        commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
+       
         commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
         
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
-        commandBuffer.drawIndexed(static_cast<u32>(mesh.getIndices().size()), 1, 0, 0, 0);
+
+        for (auto& mesh : meshes)
+        {
+            commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), glm::value_ptr(mesh.getModelMatrix()));
+            commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer, {0}); 
+            commandBuffer.bindIndexBuffer(*mesh.indexBuffer, 0, vk::IndexType::eUint16);
+            commandBuffer.drawIndexed(static_cast<u32>(mesh.getIndices().size()), 1, 0, 0, 0);
+           
+        }
 
         commandBuffer.endRendering();
 
@@ -665,7 +681,8 @@ export class VulkanRenderer{
         graphicsQueue.waitIdle();
     }
 
-    void createVertexBuffer()
+    
+    void createVertexBuffer(Mesh &mesh)
     {
         vk::DeviceSize bufferSize = sizeof(Vertex) * mesh.getVertices().size();
 
@@ -676,13 +693,13 @@ export class VulkanRenderer{
         memcpy(dataStaging, mesh.getVertices().data(), bufferSize);
         stagingBufferMemory.unmapMemory();
 
-        std::tie(vertexBuffer, vertexBufferMemory) =
+        std::tie(mesh.vertexBuffer, mesh.vertexBufferMemory) =
             createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+        copyBuffer(stagingBuffer, mesh.vertexBuffer, bufferSize);
     }
 
-    void createIndexBuffer() {
+    void createIndexBuffer(Mesh &mesh) {
 
          vk::DeviceSize bufferSize = sizeof(u16) * mesh.getIndices().size();
 
@@ -693,10 +710,10 @@ export class VulkanRenderer{
         memcpy(dataStaging, mesh.getIndices().data(), bufferSize);
         stagingBufferMemory.unmapMemory();
 
-        std::tie(indexBuffer, indexBufferMemory) =
+        std::tie(mesh.indexBuffer, mesh.indexBufferMemory) =
             createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-        copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+        copyBuffer(stagingBuffer, mesh.indexBuffer, bufferSize);
 
     }
    
@@ -764,12 +781,9 @@ export class VulkanRenderer{
     }
 
     auto updateUniformBuffer(Camera& camera, u32 currentImage) -> void {
-        static auto startTime = std::chrono::high_resolution_clock::now();
-
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time       = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+       
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        
         ubo.view = camera.getViewMatrix(); 
         ubo.proj = camera.getProjMatrix();
 
@@ -832,16 +846,11 @@ export class VulkanRenderer{
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline graphicsPipeline = nullptr;
-    vk::raii::CommandPool  commandPool = nullptr;
-    vk::raii::Buffer vertexBuffer = nullptr;
-    vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+    vk::raii::CommandPool  commandPool = nullptr; 
 
     vk::raii::DescriptorPool descriptorPool = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
 
-    
-    vk::raii::Buffer indexBuffer = nullptr;
-    vk::raii::DeviceMemory  indexBufferMemory = nullptr;
 
     //we want as many uniform buffers as frames in flight
     std::vector<vk::raii::Buffer> uniformBuffers;
@@ -866,7 +875,6 @@ export class VulkanRenderer{
     std::vector<vk::raii::ImageView> swapChainImageViews;
 
     Logger logger;
-    Window* window;
-    Mesh mesh;
+    Window* window; 
 
 };

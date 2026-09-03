@@ -8,6 +8,7 @@ import event;
 import types;
 import vulkan_renderer;
 import camera;
+import mesh;
 
 
 export class Application {
@@ -22,6 +23,12 @@ export class Application {
             glm::vec2(800.0, 600.0), 
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
+
+           
+            meshes.emplace_back();
+
+            for (auto& mesh : meshes) renderer.upload(mesh);
+            
 
 
         }
@@ -39,7 +46,7 @@ export class Application {
                 SDL_GetWindowSize(window->getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
                 camera_controller.updateActiveCamera(event_manager);
-                renderer.drawFrame(*camera_controller.getActiveCamera());
+                renderer.drawFrame(*camera_controller.getActiveCamera(), meshes);
                 
             }
             renderer.waitIdle();
@@ -54,4 +61,5 @@ export class Application {
         Window* window;
         EventManager event_manager; 
         CameraController camera_controller;
+        std::vector<Mesh> meshes;
 };

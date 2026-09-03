@@ -107,7 +107,7 @@ export class Camera {
         glm::vec3 center;
 
         float azimuthAngle = 0.0f;
-        float polarAngle = 0.0f;
+        float polarAngle = 45.0f;
         float radius = 2.0f;
 };
 

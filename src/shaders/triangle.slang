@@ -3,8 +3,7 @@ struct VSInput {
     float3 inColor;
 };
 
-struct UniformBuffer {
-    float4x4 model;
+struct UniformBuffer { 
     float4x4 view;
     float4x4 proj;
 };
@@ -16,10 +15,20 @@ struct VSOutput
     float3 color;
 };
 
+
+struct PushConstants{
+    float4x4 model;
+};
+
+[[vk_push_constant]] 
+PushConstants pc; 
+
+
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
+  
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPosition, 0.0, 1.0))));
+    output.pos = mul(ubo.proj, mul(ubo.view, mul(pc.model, float4(input.inPosition, 0.0, 1.0))));
     output.color = input.inColor;
     return output;
 }
