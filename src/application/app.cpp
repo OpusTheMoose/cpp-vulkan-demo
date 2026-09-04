@@ -27,15 +27,17 @@ export class Application {
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
 
-            Sphere new_sphere(1.0, 20);
+            Sphere new_sphere(1.0, 20, glm::vec3(1.0, 0.0, 0.0), glm::vec3(1.0f, 0.0f, 0.0f));
+            Sphere new_sphere_2(1.0, 20, glm::vec3(0.0, 1.0, 0.0), glm::vec3(0.0, 0.0, 2.0));
 
            
             meshes.emplace_back(std::move(new_sphere.getMesh()));
+            meshes.emplace_back(std::move(new_sphere_2.getMesh()));
 
              for (auto& mesh : meshes) 
              {
                 renderer.upload(mesh);
-                std::cout << glm::to_string(mesh.getModelMatrix()) << std::endl;
+               
              }
             
 

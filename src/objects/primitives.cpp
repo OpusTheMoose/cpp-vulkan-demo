@@ -9,8 +9,10 @@ import types;
 
 export class Sphere {
     public:
-    Sphere(const float radius, const i32 subdivisions)
+    Sphere(const float radius, const i32 subdivisions, const glm::vec3 color, const glm::vec3 pos)
     {
+
+    mesh.setPosition(pos);
     const i32 stacks = std::max(3, subdivisions); 
     const i32 slices = std::max(3, subdivisions * 2); 
 
@@ -38,7 +40,7 @@ export class Sphere {
             Vertex vert{};
             vert.pos = {x, y, z};
             vert.normal = {x, y, z};
-            vert.color = {1.0, 1.0, 1.0};
+            vert.color = color;
 
             // UV: u wraps around, v goes from top (0) to bottom (1)
             vert.uv.x = static_cast<float>(j) / static_cast<float>(slices);

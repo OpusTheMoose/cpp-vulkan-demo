@@ -28,6 +28,9 @@ export class Mesh {
         auto setScale(glm::vec3 scale) {
             this->scale = scale;
         }
+        auto setPosition(glm::vec3 pos) {
+            this->pos = pos;
+        }
 
         std::vector<Vertex> getVertices() {
             return vertices;

@@ -1,5 +1,6 @@
 module;
 #include <cassert>
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/scalar_constants.hpp>
@@ -51,7 +52,12 @@ export class Camera {
     }
     auto zoom(const float zoomAmount) -> void {
      
-       radius -= zoomAmount;
+        constexpr float minRadius = 0.1;
+        constexpr float maxRadius = 200.0f;
+       //Flip so scroll up is zoom in
+       float factor = std::exp(zoomAmount * -1);
+       radius *= factor;
+       radius = glm::clamp(radius, minRadius, maxRadius);
     }
 
      auto getEye() const {
@@ -108,7 +114,7 @@ export class Camera {
 
         float azimuthAngle = 0.0f;
         float polarAngle = 45.0f;
-        float radius = 2.0f;
+        float radius = 20.0f;
 };
 
 export class CameraController {
