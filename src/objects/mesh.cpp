@@ -19,6 +19,16 @@ export class Mesh {
 
         Mesh(Mesh&&) noexcept = default;
         Mesh& operator=(Mesh&&) noexcept = default;
+
+        /*
+            VERTICES AND INDICES ARE MOVED WHEN USING THE PARAMERTIZED CONSTRUCTOR
+            THIS IS NOT A GOOD DESIGN SO BE CAREFUL
+        */
+        Mesh(std::vector<Vertex> &vertices, std::vector<u16> &indices)
+        {
+            this->vertices = std::move(vertices);
+            this->indices = std::move(indices);
+        }
        
         auto upload(std::vector<Vertex> &vertices_, std::vector<u16> &indices_){
             this->vertices = vertices_;

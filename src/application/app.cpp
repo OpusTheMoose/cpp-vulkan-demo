@@ -3,15 +3,15 @@ module;
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 #include <SDL3/SDL.h>
-#include <iostream>
+#include <print>
 export module app;
 import window;
 import event;
 import types;
 import vulkan_renderer;
 import camera;
+import draw3d;
 import mesh;
-import sphere;
 
 
 export class Application {
@@ -27,23 +27,18 @@ export class Application {
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
 
-            Sphere new_sphere(1.0, 20, glm::vec3(1.0, 0.0, 0.0), glm::vec3(1.0f, 0.0f, 0.0f));
-            Sphere new_sphere_2(1.0, 20, glm::vec3(0.0, 1.0, 0.0), glm::vec3(0.0, 0.0, 2.0));
+            draw = draw::Draw3D(renderer);
 
-           
-            meshes.emplace_back(std::move(new_sphere.getMesh()));
-            meshes.emplace_back(std::move(new_sphere_2.getMesh()));
-
-             for (auto& mesh : meshes) 
-             {
-                renderer.upload(mesh);
-               
-             }
-            
+       
 
 
-        }
+            }
+  
+
         void loop() {
+            std::vector<Mesh*> meshes;
+             meshes.push_back(&draw.getMesh(draw::PrimitiveType::SPHERE));
+            // std::println("Vert color: {} {} {}", meshes.at(0)->getVertices().at(0));
            while (window.isWindowOpen())
             {
                 event_manager.pollEvents();
@@ -53,10 +48,12 @@ export class Application {
                     window.setWindowOpen(false);
                 } 
 
+                
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
                 camera_controller.updateActiveCamera(event_manager);
+                
                 renderer.drawFrame(*camera_controller.getActiveCamera(), meshes);
                 
             }
@@ -70,7 +67,8 @@ export class Application {
         Window window;
         EventManager event_manager;
         VulkanRenderer renderer;
+        draw::Draw3D draw;
          
         CameraController camera_controller;
-        std::vector<Mesh> meshes;
+        
 };

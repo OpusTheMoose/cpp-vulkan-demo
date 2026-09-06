@@ -81,7 +81,7 @@ export class VulkanRenderer{
             createImageViews();
         }
 
-        auto drawFrame(Camera camera, std::vector<Mesh> &meshes) -> void {
+        auto drawFrame(Camera camera, std::vector<Mesh*> &meshes) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -552,7 +552,7 @@ export class VulkanRenderer{
 
     }
 
-    auto recordCommandBuffer(u32 imageIndex, std::vector<Mesh> &meshes) -> void
+    auto recordCommandBuffer(u32 imageIndex, std::vector<Mesh*> &meshes) -> void
     {
         auto &commandBuffer = commandBuffers[frameIndex];
         commandBuffer.begin({});
@@ -610,10 +610,10 @@ export class VulkanRenderer{
 
         for (auto& mesh : meshes)
         {
-            commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), glm::value_ptr(mesh.getModelMatrix()));
-            commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer, {0}); 
-            commandBuffer.bindIndexBuffer(*mesh.indexBuffer, 0, vk::IndexType::eUint16);
-            commandBuffer.drawIndexed(static_cast<u32>(mesh.getIndices().size()), 1, 0, 0, 0);
+            commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), glm::value_ptr(mesh->getModelMatrix()));
+            commandBuffer.bindVertexBuffers(0, *mesh->vertexBuffer, {0}); 
+            commandBuffer.bindIndexBuffer(*mesh->indexBuffer, 0, vk::IndexType::eUint16);
+            commandBuffer.drawIndexed(static_cast<u32>(mesh->getIndices().size()), 1, 0, 0, 0);
            
         }
 
