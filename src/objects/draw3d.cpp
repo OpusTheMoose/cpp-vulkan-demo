@@ -1,11 +1,18 @@
 module;
+#include <glm/fwd.hpp>
 #include <vector>
 #include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/ext/quaternion_transform.hpp>
+#include <glm/matrix.hpp>
+
 export module draw3d;
 import vertex;
 import types;
 import mesh;
 import vulkan_renderer;
+import camera;
 
 namespace draw{
 
@@ -22,20 +29,38 @@ export class Draw3D {
         Draw3D() = default;
         Draw3D(VulkanRenderer &renderer) {
             this->renderer = &renderer;
+            for (auto &e : instanceBuffers)
+            {
+               e = renderer.createInstanceBuffer(sizeof(glm::mat4) * 1000);
+            }
             generateSphereData();
 
         }
 
-       auto endDraw() {
-        return;
+        auto startDraw() {
+            sphereInstanceData.clear();
 
+        }
+        // Submit for rendering
+       auto endDraw(Camera camera) {
+        renderer->drawFrame(camera, meshes[PrimitiveType::SPHERE], instanceBuffers[PrimitiveType::SPHERE], sphereInstanceData);
+        
        }
 
-       auto drawSphere() -> void {
+       auto drawSphere(const glm::vec3 pos, const f32 radius) -> void {
+            sphereInstanceData.emplace_back(createModelMatrix(pos, glm::vec3{radius, radius, radius}, glm::quat(0.0f, 0.0f, 0.0f, 1.0)));
             return;
        }
 
-       auto generateSphereData() -> void
+              
+
+    Mesh& getMesh(PrimitiveType type)
+    {
+        return meshes[type];
+    }
+    private:
+
+     auto generateSphereData() -> void
        {
 
         const i32 subdivisions = 20;
@@ -110,20 +135,22 @@ export class Draw3D {
         meshes[PrimitiveType::SPHERE] = Mesh(sphereVertices, sphereIndices);
 
         // Creates VBO and IBO stuff for vulkan
-        renderer->upload(meshes[PrimitiveType::SPHERE]);
+        renderer->upload(meshes[PrimitiveType::SPHERE], instanceBuffers[PrimitiveType::SPHERE]);
     }
 
-    Mesh& getMesh(PrimitiveType type)
-    {
-        return meshes[type];
-    }
-    private:
+    inline auto createModelMatrix(const glm::vec3 pos, const glm::vec3 scale, const glm::quat rot) -> glm::mat4 {
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
+            model *= glm::mat4_cast(rot);             // apply quaternion rotation
+            model = glm::scale(model, scale);
+            return model;
+        }
+
+
+
     VulkanRenderer *renderer;
     std::array<Mesh, static_cast<int>(PrimitiveType::CYLINDER) + 1> meshes;
+    std::array<InstanceBuffer, static_cast<int>(PrimitiveType::CYLINDER)+1> instanceBuffers; 
 
-
-
- 
     std::vector<glm::mat4> sphereInstanceData;
   
 };

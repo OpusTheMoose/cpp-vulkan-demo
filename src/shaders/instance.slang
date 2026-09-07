@@ -9,28 +9,28 @@ struct UniformBuffer {
     float4x4 view;
     float4x4 proj;
 };
+
+[[vk::binding(0,0 )]]
 ConstantBuffer<UniformBuffer> ubo;
 
-struct VSOutput
-{
-    float4 pos : SV_Position;
+[[vk::binding(1, 0)]]
+StructuredBuffer<float4x4> instanceModels;
+
+struct VSOutput {
+    float4 pos: SV_Position;
     float3 color;
-};
-
-
-struct PushConstants{
-    float4x4 model;
-};
-
-[[vk_push_constant]] 
-PushConstants pc; 
+}
 
 
 [shader("vertex")]
-VSOutput vertMain(VSInput input) {
+VSOutput vertMain(VSInput input, uint instanceId: SV_InstanceID) {
   
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(pc.model, float4(input.inPosition, 1.0))));
+
+    float4x4 model = instanceModels[instanceId];
+
+  
+    output.pos = mul(ubo.proj, mul(ubo.view, mul(model, float4(input.inPosition, 1.0))));
     output.color = input.inColor;
     return output;
 }

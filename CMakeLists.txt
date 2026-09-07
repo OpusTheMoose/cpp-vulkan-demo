@@ -37,7 +37,7 @@ function (add_slang_shader_target TARGET)
   add_custom_target (${TARGET} DEPENDS ${SHADERS_DIR}/slang.spv)
 endfunction()
 
-add_slang_shader_target(slang_shaders SOURCES ${CMAKE_CURRENT_LIST_DIR}/src/shaders/triangle.slang)
+add_slang_shader_target(slang_shaders SOURCES ${CMAKE_CURRENT_LIST_DIR}/src/shaders/instance.slang)
 add_executable(game main.cpp  ) 
 
 

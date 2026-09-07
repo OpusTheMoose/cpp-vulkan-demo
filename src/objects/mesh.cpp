@@ -28,6 +28,7 @@ export class Mesh {
         {
             this->vertices = std::move(vertices);
             this->indices = std::move(indices);
+            
         }
        
         auto upload(std::vector<Vertex> &vertices_, std::vector<u16> &indices_){
@@ -62,6 +63,7 @@ export class Mesh {
        vk::raii::DeviceMemory vertexBufferMemory = nullptr; 
        vk::raii::Buffer indexBuffer = nullptr;
        vk::raii::DeviceMemory indexBufferMemory = nullptr;
+       std::vector<vk::raii::DescriptorSet> descriptorSets;
     private:
         glm::vec3 pos = {0.0, 0.0, 0.0};
         glm::vec3 scale = {1.0, 1.0, 1.0};

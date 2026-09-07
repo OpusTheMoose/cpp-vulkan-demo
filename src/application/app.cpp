@@ -1,4 +1,5 @@
 module;
+#include <glm/ext/vector_float3.hpp>
 #include <glm/glm.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
@@ -36,8 +37,6 @@ export class Application {
   
 
         void loop() {
-            std::vector<Mesh*> meshes;
-             meshes.push_back(&draw.getMesh(draw::PrimitiveType::SPHERE));
             // std::println("Vert color: {} {} {}", meshes.at(0)->getVertices().at(0));
            while (window.isWindowOpen())
             {
@@ -48,13 +47,18 @@ export class Application {
                     window.setWindowOpen(false);
                 } 
 
+                draw.startDraw();
+                draw.drawSphere(glm::vec3{0.0, 0.0, 0.0}, 1.0);
+                draw.drawSphere(glm::vec3{2.0, 0.0, 0.0}, 2.0);
+                draw.endDraw(*camera_controller.getActiveCamera());
+                
                 
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
                 camera_controller.updateActiveCamera(event_manager);
                 
-                renderer.drawFrame(*camera_controller.getActiveCamera(), meshes);
+                
                 
             }
             renderer.waitIdle();
