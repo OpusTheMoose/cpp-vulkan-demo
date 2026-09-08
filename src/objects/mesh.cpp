@@ -1,14 +1,16 @@
 module;
+
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/quaternion_transform.hpp>
 #include <glm/gtc/constants.hpp>
 #include <vector>
 #include <glm/matrix.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <vulkan/vulkan_raii.hpp>
 export module mesh;
 import vertex;
 import types;
+import vulkan_renderer;
+
 
 export class Mesh {
     public:
@@ -58,21 +60,15 @@ export class Mesh {
             return model;
         }
      
-                
-       vk::raii::Buffer vertexBuffer = nullptr;
-       vk::raii::DeviceMemory vertexBufferMemory = nullptr; 
-       vk::raii::Buffer indexBuffer = nullptr;
-       vk::raii::DeviceMemory indexBufferMemory = nullptr;
-       std::vector<vk::raii::DescriptorSet> descriptorSets;
+               
+        Buffer vertexBuffer;
+        Buffer indexBuffer;
+    
+      // std::vector<vk::raii::DescriptorSet> descriptorSets;
     private:
         glm::vec3 pos = {0.0, 0.0, 0.0};
         glm::vec3 scale = {1.0, 1.0, 1.0};
         glm::quat rot = {0.0f, 0.0f, 0.0f, 1.0f};
         std::vector<Vertex> vertices;
         std::vector<u16> indices;
-};
-
-export struct UniformBufferObject {
-    glm::mat4 view;
-    glm::mat4 proj;
 };

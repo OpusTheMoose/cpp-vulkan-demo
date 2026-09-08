@@ -1,9 +1,6 @@
 module;
-#include "vulkan/vulkan.hpp"
 #include <cstddef>
 #include <glm/glm.hpp>
-#include <vulkan/vulkan_core.h>
-#define VULKAN_HPP_NO_CONSTRUCTORS
 #include <vulkan/vulkan_raii.hpp>
 export module vertex;
 

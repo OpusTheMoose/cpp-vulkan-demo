@@ -7,6 +7,7 @@ module;
 #include <glm/ext/quaternion_transform.hpp>
 #include <glm/matrix.hpp>
 
+#include <vulkan/vulkan_raii.hpp>
 export module draw3d;
 import vertex;
 import types;
@@ -33,7 +34,12 @@ export class Draw3D {
             {
                e = renderer.createInstanceBuffer(sizeof(glm::mat4) * 1000);
             }
+
+            // Create uniform buffers BEFORE descriptor sets!!
+            uniformBuffers = renderer.createUniformBuffers();
             generateSphereData();
+
+            
 
         }
 
@@ -43,7 +49,18 @@ export class Draw3D {
         }
         // Submit for rendering
        auto endDraw(Camera camera) {
-        renderer->drawFrame(camera, meshes[PrimitiveType::SPHERE], instanceBuffers[PrimitiveType::SPHERE], sphereInstanceData);
+        Mesh& sphere = meshes[PrimitiveType::SPHERE];
+        DrawSubmission draw = {
+            sphere.vertexBuffer,
+            sphere.indexBuffer,
+            instanceBuffers[PrimitiveType::SPHERE],
+            sphereInstanceData,
+            descriptorSets,
+            static_cast<u32>(sphere.getIndices().size()),
+            static_cast<u32>(sphereInstanceData.size())
+        };
+ 
+        renderer->drawFrame(camera, uniformBuffers, draw);
         
        }
 
@@ -134,8 +151,11 @@ export class Draw3D {
         
         meshes[PrimitiveType::SPHERE] = Mesh(sphereVertices, sphereIndices);
 
-        // Creates VBO and IBO stuff for vulkan
-        renderer->upload(meshes[PrimitiveType::SPHERE], instanceBuffers[PrimitiveType::SPHERE]);
+        Mesh &sphere = meshes[PrimitiveType::SPHERE];
+        sphere.vertexBuffer = renderer->createVertexBuffer(sphere.getVertices().data(), sphere.getVertices().size() * sizeof(Vertex));
+        sphere.indexBuffer = renderer->createIndexBuffer(sphere.getIndices().data(), sphere.getIndices().size() * sizeof(u16));
+
+        descriptorSets = renderer->createDescriptorSets(instanceBuffers[PrimitiveType::SPHERE].buffers, uniformBuffers);
     }
 
     inline auto createModelMatrix(const glm::vec3 pos, const glm::vec3 scale, const glm::quat rot) -> glm::mat4 {
@@ -149,7 +169,10 @@ export class Draw3D {
 
     VulkanRenderer *renderer;
     std::array<Mesh, static_cast<int>(PrimitiveType::CYLINDER) + 1> meshes;
-    std::array<InstanceBuffer, static_cast<int>(PrimitiveType::CYLINDER)+1> instanceBuffers; 
+    std::array<Buffer, static_cast<int>(PrimitiveType::CYLINDER)+1> instanceBuffers; 
+
+    std::vector<Buffer> uniformBuffers;
+    std::vector<vk::raii::DescriptorSet> descriptorSets;
 
     std::vector<glm::mat4> sphereInstanceData;
   

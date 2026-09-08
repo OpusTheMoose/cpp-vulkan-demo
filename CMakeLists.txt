@@ -43,7 +43,7 @@ add_executable(game main.cpp  )
 
 
 target_sources(game PUBLIC FILE_SET CXX_MODULES FILES  src/utils/types.cpp  src/window/window.cpp src/utils/logger.cpp src/window/event.cpp src/application/app.cpp
-src/renderer/vulkan_renderer.cpp src/utils/file.cpp src/objects/vertex.cpp src/objects/mesh.cpp src/utils/camera.cpp  src/objects/draw3d.cpp)
+src/renderer/vulkan_renderer.cpp src/utils/file.cpp src/objects/vertex.cpp src/objects/mesh.cpp src/utils/camera.cpp  src/objects/draw3d.cpp )
 target_compile_options(game PRIVATE -Wall -Wextra -Wpedantic -Werror -fsanitize=address -g -O3 )
 target_link_options(game PRIVATE -fsanitize=address)
         

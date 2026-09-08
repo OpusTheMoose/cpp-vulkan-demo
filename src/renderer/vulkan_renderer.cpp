@@ -1,20 +1,22 @@
 module;
+
+
+#include <vulkan/vulkan_raii.hpp>
+
 #include "SDL3/SDL_error.h"
 #include "SDL3/SDL_vulkan.h"
 #include <SDL3/SDL_video.h>
-#include "vulkan/vulkan.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
-#include <vulkan/vulkan_core.h>
-#include <chrono>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#define VULKAN_HPP_NO_CONSTRUCTORS
-#include <vulkan/vulkan_raii.hpp>
+
 
 export module vulkan_renderer;
 import logger;
@@ -22,7 +24,7 @@ import types;
 import window;
 import file;
 import vertex;
-import mesh;
+
 import camera;
 
 const std::vector<char const*> validationLayers = {
@@ -37,11 +39,30 @@ constexpr bool enableValidationLayers = true;
 
 constexpr i32 FRAMES_IN_FLIGHT = 2;
 
-export struct InstanceBuffer {
-    std::vector<vk::raii::Buffer> instanceBuffers;
-    std::vector<vk::raii::DeviceMemory> instanceBuffersMemory;
-    std::vector<void*> instanceBuffersMapped;
+
+export struct Buffer {
+    std::vector<vk::raii::Buffer> buffers;
+    std::vector<vk::raii::DeviceMemory> buffersMemory;
+    std::vector<void*> buffersMapped;
 };
+
+export struct UniformBufferObject {
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
+
+export struct DrawSubmission {
+    Buffer const& vertexBuffer ;
+    Buffer const& indexBuffer;
+    Buffer const& instanceBuffer;
+    
+    std::span<const glm::mat4> instanceData;
+    std::span<const vk::raii::DescriptorSet> descriptorSets;
+
+    u32 indexCount, instanceCount;
+};
+
 
 export class VulkanRenderer{
     public:
@@ -58,8 +79,7 @@ export class VulkanRenderer{
                 createDepthResource();
                 createDescriptorSetLayout();
                 createGraphicsPipeline();
-                createCommandPool();
-                createUniformBuffers();
+                createCommandPool(); 
                 createDescriptorPool(); 
                 createCommandBuffers();
                 createSyncObjects();
@@ -71,16 +91,7 @@ export class VulkanRenderer{
 
             }
         }
-        // Generate vertex and index buffer, and optionally the descriptor sets needed for the instance buffer.
-        auto upload(Mesh &mesh, InstanceBuffer &instance) -> void {
-            createVertexBuffer(mesh);
-            createIndexBuffer(mesh);
-           // createInstanceBuffer(sizeof)
-            mesh.descriptorSets = createDescriptorSets(instance.instanceBuffers);
-            
-        
-           
-        }
+   
 
         auto waitIdle() -> void {
             device.waitIdle();
@@ -94,30 +105,38 @@ export class VulkanRenderer{
             createSwapChain();
             createImageViews();
         }
-        auto createInstanceBuffer(const size_t bufferSize) -> InstanceBuffer
-        {
-            InstanceBuffer instanceBuffer;
-            for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
-        {
-            auto [buffer, memory] = createBuffer(
-                bufferSize,
-                vk::BufferUsageFlagBits::eStorageBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible |
-                vk::MemoryPropertyFlagBits::eHostCoherent
 
+    auto createInstanceBuffer(size_t bufferSize) -> Buffer
+    {
+        Buffer instanceBuffer;
+
+        for (size_t i = 0; i < FRAMES_IN_FLIGHT; ++i)
+        {
+            Buffer frameBuffer = createBuffer(
+            bufferSize,
+            vk::BufferUsageFlagBits::eStorageBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent
             );
 
-            instanceBuffer.instanceBuffers.emplace_back(std::move(buffer));
-            instanceBuffer.instanceBuffersMemory.emplace_back(std::move(memory));
-            instanceBuffer.instanceBuffersMapped.emplace_back(
-                instanceBuffer.instanceBuffersMemory.back().mapMemory(0, bufferSize)
+        instanceBuffer.buffers.emplace_back(
+            std::move(frameBuffer.buffers.front())
             );
 
+        instanceBuffer.buffersMemory.emplace_back(
+            std::move(frameBuffer.buffersMemory.front())
+            );
+
+        instanceBuffer.buffersMapped.emplace_back(
+            instanceBuffer.buffersMemory.back().mapMemory(0, bufferSize)
+            );
         }
-        return instanceBuffer;
-    }
 
-        auto updateInstanceBuffer( const InstanceBuffer &instance, std::vector<glm::mat4> const& instanceData, u32 currentFrame
+    return instanceBuffer;
+    }
+        
+
+    auto updateInstanceBuffer( const Buffer &instance, std::span<const glm::mat4> const& instanceData, u32 currentFrame
         ) -> void {
             if (instanceData.size() > 1000) {
                 throw std::runtime_error("Too many instances!");
@@ -125,14 +144,67 @@ export class VulkanRenderer{
             }
 
             memcpy(
-                instance.instanceBuffersMapped[currentFrame],
+                instance.buffersMapped[currentFrame],
                 instanceData.data(),
                 instanceData.size() * sizeof(glm::mat4)
             );
 
         }
 
-        auto drawFrame(Camera camera, Mesh& mesh, InstanceBuffer &instance, std::vector<glm::mat4> const& instanceData) -> void {
+    auto createVertexBuffer(void* data, size_t bufferSize) -> Buffer
+    {
+    
+        auto  stagingBuffer =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        void *dataStaging = stagingBuffer.buffersMemory.front().mapMemory(0, bufferSize);
+        memcpy(dataStaging, data, bufferSize);
+        stagingBuffer.buffersMemory.front().unmapMemory();
+
+        auto vertexBuffer =
+            createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+        copyBuffer(stagingBuffer.buffers.back(), vertexBuffer.buffers.back(), bufferSize);
+
+        return vertexBuffer;
+    }
+
+    auto createIndexBuffer(void* data, size_t bufferSize) -> Buffer {
+
+        auto stagingBuffer =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        void *dataStaging = stagingBuffer.buffersMemory.front().mapMemory(0, bufferSize);
+        memcpy(dataStaging, data, bufferSize);
+        stagingBuffer.buffersMemory.front().unmapMemory();
+
+        auto indexBuffer  =
+            createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+        copyBuffer(stagingBuffer.buffers.back(), indexBuffer.buffers.back(), bufferSize);
+
+        return indexBuffer;
+    }
+
+    auto createUniformBuffers() -> std::vector<Buffer> {
+        std::vector<Buffer> buffers;
+        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
+        {
+            vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+            Buffer uniformBuffers = createBuffer(
+            bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, 
+            vk::MemoryPropertyFlagBits::eHostVisible |
+             vk::MemoryPropertyFlagBits::eHostCoherent);
+         
+            uniformBuffers.buffersMapped.emplace_back(
+                uniformBuffers.buffersMemory[0].mapMemory(0, bufferSize)
+            );
+            buffers.emplace_back(std::move(uniformBuffers));
+        }
+        return buffers;
+    }
+
+        auto drawFrame(Camera camera, std::vector<Buffer>& uniformBuffer, DrawSubmission const& draw) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -154,10 +226,14 @@ export class VulkanRenderer{
 
             device.resetFences(*inFlightFences[frameIndex]);
 
-            updateUniformBuffer(camera, frameIndex);
-            updateInstanceBuffer(instance, instanceData, frameIndex);
+            UniformBufferObject cameraUBO = {};
+            cameraUBO.proj = camera.getProjMatrix();
+            cameraUBO.view = camera.getViewMatrix();
+
+            updateUniformBuffer(camera, cameraUBO, uniformBuffer[frameIndex]);
+            updateInstanceBuffer(draw.instanceBuffer, draw.instanceData, frameIndex);
             commandBuffers[frameIndex].reset();
-            recordCommandBuffer(imageIndex, mesh, static_cast<u32>(instanceData.size()));
+            recordCommandBuffer(draw, imageIndex);
 
             graphicsQueue.waitIdle();
 
@@ -197,8 +273,138 @@ export class VulkanRenderer{
             
         }
 
+    // TODO: everything
+    auto createDescriptorSets(std::vector<vk::raii::Buffer> &instanceBuffers, std::vector<Buffer>& uniformBuffers) -> std::vector<vk::raii::DescriptorSet> {
+        std::vector<vk::DescriptorSetLayout> layouts(FRAMES_IN_FLIGHT, *descriptorSetLayout);
+        vk::DescriptorSetAllocateInfo allocInfo;
+        std::vector<vk::raii::DescriptorSet> descriptorSets;
+        allocInfo.setDescriptorPool(descriptorPool)
+        .setDescriptorSetCount(static_cast<u32>(layouts.size()))
+        .setPSetLayouts(layouts.data());
+
+
+        descriptorSets = device.allocateDescriptorSets(allocInfo);
+
+        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
+        {
+            vk::DescriptorBufferInfo bufferInfo = {};
+            bufferInfo.setBuffer(uniformBuffers[i].buffers[0])
+            .setOffset(0)
+            .setRange(sizeof(UniformBufferObject));
+
+            
+            vk::DescriptorBufferInfo instanceBufferInfo = {};
+            instanceBufferInfo.setBuffer(instanceBuffers[i])
+            .setOffset(0)
+            .setRange(sizeof(glm::mat4) * 1000);
+
+            std::array<vk::WriteDescriptorSet, 2>   descriptorWrite;
+            descriptorWrite[0].setDstSet(descriptorSets[i])
+            .setDstBinding(0)
+            .setDstArrayElement(0)
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+            .setPBufferInfo(&bufferInfo);
+
+            descriptorWrite[1].setDstSet(descriptorSets[i])
+            .setDstBinding(1)
+            .setDstArrayElement(0)
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+            .setPBufferInfo(&instanceBufferInfo);
+
+            device.updateDescriptorSets(descriptorWrite, {});
+                                
+        }
+
+        return descriptorSets;
+
+    }
 
     private:
+
+    auto recordCommandBuffer( DrawSubmission const& draw, u32 imageIndex) -> void
+    {
+        auto &commandBuffer = commandBuffers[frameIndex];
+        commandBuffer.begin({});
+        transition_image_layout(
+            swapChainImages[imageIndex], 
+            vk::ImageLayout::eUndefined, 
+            vk::ImageLayout::eColorAttachmentOptimal, 
+            {}, 
+            vk::AccessFlagBits2::eColorAttachmentWrite, 
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, 
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::ImageAspectFlagBits::eColor);
+
+          transition_image_layout(
+        *depthImage,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthAttachmentOptimal,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::ImageAspectFlagBits::eDepth);
+
+        vk::ClearValue  clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+        vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+       vk::RenderingAttachmentInfo attachmentInfo = {};
+       attachmentInfo.setImageView(swapChainImageViews[imageIndex])
+       .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
+       .setLoadOp(vk::AttachmentLoadOp::eClear)
+       .setStoreOp(vk::AttachmentStoreOp::eStore)
+       .setClearValue(clearColor);
+
+       vk::RenderingAttachmentInfo depthAttachmentInfo = {};
+       depthAttachmentInfo.setImageView(depthImageView)
+       .setImageView(depthImageView)
+       .setImageLayout(vk::ImageLayout::eDepthAttachmentOptimal)
+       .setLoadOp(vk::AttachmentLoadOp::eClear)
+       .setStoreOp(vk::AttachmentStoreOp::eDontCare)
+       .setClearValue(clearDepth);
+
+        vk::RenderingInfo renderingInfo = {};
+        renderingInfo.setRenderArea(vk::Rect2D{{0, 0}, swapChainExtent});
+        renderingInfo.setLayerCount(1);
+        renderingInfo.setColorAttachmentCount(1);
+        renderingInfo.setPColorAttachments(&attachmentInfo);
+        renderingInfo.setPDepthAttachment(&depthAttachmentInfo);
+
+        commandBuffer.beginRendering(renderingInfo);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+       
+        commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+        commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+        
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *draw.descriptorSets[frameIndex], nullptr);
+
+       // commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), glm::value_ptr(mesh.getModelMatrix()));
+        commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
+        commandBuffer.bindIndexBuffer(draw.indexBuffer.buffers[0], 0, vk::IndexType::eUint16);
+        commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
+           
+        
+
+        commandBuffer.endRendering();
+
+        // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
+    transition_image_layout(
+    swapChainImages[imageIndex],
+    vk::ImageLayout::eColorAttachmentOptimal,
+    vk::ImageLayout::ePresentSrcKHR,
+    vk::AccessFlagBits2::eColorAttachmentWrite,             // srcAccessMask
+    {},                                                     // dstAccessMask
+    vk::PipelineStageFlagBits2::eColorAttachmentOutput,     // srcStage
+    vk::PipelineStageFlagBits2::eBottomOfPipe     ,          // dstStage
+    vk::ImageAspectFlagBits::eColor
+    );
+
+  
+
+    commandBuffer.end();
+
+    }
     auto createInstance() -> void {
 
         std::vector<char const*> requiredLayers;
@@ -218,13 +424,13 @@ export class VulkanRenderer{
         {
             throw std::runtime_error("Required layer not supported: " + std::string(*unsupportedLayerIt));
         }
-        constexpr vk::ApplicationInfo appInfo {
-             "Hello Triangle",
-             VK_MAKE_VERSION(1, 0, 0),
-             "No Engine",
-             VK_MAKE_VERSION(1, 0 , 0),
-            vk::ApiVersion14};
 
+        vk::ApplicationInfo appInfo  = {};
+        appInfo.pApplicationName = "Raytracing Demo";
+        appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+        appInfo.pEngineName = "No Engine";
+        appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+        appInfo.apiVersion = vk::ApiVersion14;
      
         auto requiredExtensions = getRequiredInstanceExtensions();
 
@@ -264,6 +470,7 @@ export class VulkanRenderer{
             return extensions;
     }
 
+    // TODO: Remove window reference
     auto createSurface(Window& window) -> void {
         VkSurfaceKHR _surface;
         assert(window.getSDLWindow() != nullptr);
@@ -604,88 +811,7 @@ export class VulkanRenderer{
 
     }
 
-    auto recordCommandBuffer(u32 imageIndex, Mesh &mesh, u32 instanceCount) -> void
-    {
-        auto &commandBuffer = commandBuffers[frameIndex];
-        commandBuffer.begin({});
-        transition_image_layout(
-            swapChainImages[imageIndex], 
-            vk::ImageLayout::eUndefined, 
-            vk::ImageLayout::eColorAttachmentOptimal, 
-            {}, 
-            vk::AccessFlagBits2::eColorAttachmentWrite, 
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput, 
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::ImageAspectFlagBits::eColor);
-
-          transition_image_layout(
-        *depthImage,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eDepthAttachmentOptimal,
-        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::ImageAspectFlagBits::eDepth);
-
-        vk::ClearValue  clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
-        vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
-       vk::RenderingAttachmentInfo attachmentInfo = {};
-       attachmentInfo.setImageView(swapChainImageViews[imageIndex])
-       .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
-       .setLoadOp(vk::AttachmentLoadOp::eClear)
-       .setStoreOp(vk::AttachmentStoreOp::eStore)
-       .setClearValue(clearColor);
-
-       vk::RenderingAttachmentInfo depthAttachmentInfo = {};
-       depthAttachmentInfo.setImageView(depthImageView)
-       .setImageView(depthImageView)
-       .setImageLayout(vk::ImageLayout::eDepthAttachmentOptimal)
-       .setLoadOp(vk::AttachmentLoadOp::eClear)
-       .setStoreOp(vk::AttachmentStoreOp::eDontCare)
-       .setClearValue(clearDepth);
-
-        vk::RenderingInfo renderingInfo = {};
-        renderingInfo.setRenderArea(vk::Rect2D{{0, 0}, swapChainExtent});
-        renderingInfo.setLayerCount(1);
-        renderingInfo.setColorAttachmentCount(1);
-        renderingInfo.setPColorAttachments(&attachmentInfo);
-        renderingInfo.setPDepthAttachment(&depthAttachmentInfo);
-
-        commandBuffer.beginRendering(renderingInfo);
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-       
-        commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
-        commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-        
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *mesh.descriptorSets[frameIndex], nullptr);
-
-        commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), glm::value_ptr(mesh.getModelMatrix()));
-        commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer, {0}); 
-        commandBuffer.bindIndexBuffer(mesh.indexBuffer, 0, vk::IndexType::eUint16);
-        commandBuffer.drawIndexed(static_cast<u32>(mesh.getIndices().size()), instanceCount, 0, 0, 0);
-           
-        
-
-        commandBuffer.endRendering();
-
-        // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
-    transition_image_layout(
-    swapChainImages[imageIndex],
-    vk::ImageLayout::eColorAttachmentOptimal,
-    vk::ImageLayout::ePresentSrcKHR,
-    vk::AccessFlagBits2::eColorAttachmentWrite,             // srcAccessMask
-    {},                                                     // dstAccessMask
-    vk::PipelineStageFlagBits2::eColorAttachmentOutput,     // srcStage
-    vk::PipelineStageFlagBits2::eBottomOfPipe     ,          // dstStage
-    vk::ImageAspectFlagBits::eColor
-    );
-
-  
-
-    commandBuffer.end();
-
-    }
+    
 
     void transition_image_layout(
     vk::Image               image,
@@ -749,7 +875,7 @@ export class VulkanRenderer{
         swapChain = nullptr;
     }
 
-    auto copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & dstBuffer, vk::DeviceSize size)
+    auto copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & dstBuffer, vk::DeviceSize size) -> void
     {
         vk::CommandBufferAllocateInfo allocInfo = {};
         allocInfo.setCommandPool(commandPool)
@@ -769,47 +895,9 @@ export class VulkanRenderer{
         graphicsQueue.submit(submitInfo, nullptr);
         graphicsQueue.waitIdle();
     }
+ 
 
-    
-    void createVertexBuffer(Mesh &mesh)
-    {
-        vk::DeviceSize bufferSize = sizeof(Vertex) * mesh.getVertices().size();
-
-        auto [stagingBuffer, stagingBufferMemory] =
-        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-        void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
-        memcpy(dataStaging, mesh.getVertices().data(), bufferSize);
-        stagingBufferMemory.unmapMemory();
-
-        std::tie(mesh.vertexBuffer, mesh.vertexBufferMemory) =
-            createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-        copyBuffer(stagingBuffer, mesh.vertexBuffer, bufferSize);
-    }
-
-    void createIndexBuffer(Mesh &mesh) {
-
-         vk::DeviceSize bufferSize = sizeof(u16) * mesh.getIndices().size();
-
-        auto [stagingBuffer, stagingBufferMemory] =
-        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-        void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
-        memcpy(dataStaging, mesh.getIndices().data(), bufferSize);
-        stagingBufferMemory.unmapMemory();
-
-        std::tie(mesh.indexBuffer, mesh.indexBufferMemory) =
-            createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-        copyBuffer(stagingBuffer, mesh.indexBuffer, bufferSize);
-
-    }
-
-  
-   
-
-   std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
+    auto createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) -> Buffer
     {
         vk::BufferCreateInfo   bufferInfo = {};
         bufferInfo.setSize(size)
@@ -824,7 +912,12 @@ export class VulkanRenderer{
         .setMemoryTypeIndex(findMemoryType(memRequirements.memoryTypeBits, properties));
         vk::raii::DeviceMemory bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
         buffer.bindMemory(*bufferMemory, 0);
-        return {std::move(buffer), std::move(bufferMemory)};
+
+        Buffer newBuffer;
+        newBuffer.buffers.emplace_back(std::move(buffer));
+        newBuffer.buffersMemory.emplace_back(std::move(bufferMemory)); 
+
+        return newBuffer;
     }
 
 
@@ -868,26 +961,14 @@ export class VulkanRenderer{
 
     }
 
-    auto createUniformBuffers() -> void {
-        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
-        {
-            vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-            auto [buffer, bufferMem]  = createBuffer(
-            bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            uniformBuffers.emplace_back(std::move(buffer));
-            uniformBuffersMemory.emplace_back(std::move(bufferMem));
-            uniformBuffersMapped.emplace_back( uniformBuffersMemory.back().mapMemory(0, bufferSize));
-        }
-    }
+  
 
-    auto updateUniformBuffer(Camera& camera, u32 currentImage) -> void {
+    auto updateUniformBuffer(Camera& camera, UniformBufferObject& uniformBufferObject, Buffer& ubo) -> void {
        
-        UniformBufferObject ubo{};
-        
-        ubo.view = camera.getViewMatrix(); 
-        ubo.proj = camera.getProjMatrix();
+        uniformBufferObject.view = camera.getViewMatrix(); 
+        uniformBufferObject.proj = camera.getProjMatrix();
 
-        memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+        memcpy(ubo.buffersMapped[0], &uniformBufferObject, sizeof(UniformBufferObject));
     }
 
     auto createDescriptorPool() -> void {
@@ -909,53 +990,7 @@ export class VulkanRenderer{
 
 
     }
-    // TODO: everything
-    auto createDescriptorSets(std::vector<vk::raii::Buffer> &instanceBuffers) -> std::vector<vk::raii::DescriptorSet> {
-        std::vector<vk::DescriptorSetLayout> layouts(FRAMES_IN_FLIGHT, *descriptorSetLayout);
-        vk::DescriptorSetAllocateInfo allocInfo;
-        std::vector<vk::raii::DescriptorSet> descriptorSets;
-        allocInfo.setDescriptorPool(descriptorPool)
-        .setDescriptorSetCount(static_cast<u32>(layouts.size()))
-        .setPSetLayouts(layouts.data());
-
-
-        descriptorSets = device.allocateDescriptorSets(allocInfo);
-
-        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
-        {
-            vk::DescriptorBufferInfo bufferInfo = {};
-            bufferInfo.setBuffer(uniformBuffers[i])
-            .setOffset(0)
-            .setRange(sizeof(UniformBufferObject));
-
-            
-            vk::DescriptorBufferInfo instanceBufferInfo = {};
-            instanceBufferInfo.setBuffer(instanceBuffers[i])
-            .setOffset(0)
-            .setRange(sizeof(glm::mat4) * 1000);
-
-            std::array<vk::WriteDescriptorSet, 2>   descriptorWrite;
-            descriptorWrite[0].setDstSet(descriptorSets[i])
-            .setDstBinding(0)
-            .setDstArrayElement(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setPBufferInfo(&bufferInfo);
-
-            descriptorWrite[1].setDstSet(descriptorSets[i])
-            .setDstBinding(1)
-            .setDstArrayElement(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setPBufferInfo(&instanceBufferInfo);
-
-            device.updateDescriptorSets(descriptorWrite, {});
-                                
-        }
-
-        return descriptorSets;
-
-    }
+ 
 
     vk::raii::ImageView createImageView(vk::Image const &image, vk::Format format, vk::ImageAspectFlags aspectFlags)
 	{
@@ -1026,13 +1061,6 @@ export class VulkanRenderer{
 
     vk::raii::DescriptorPool descriptorPool = nullptr;
     
-
-
-    //we want as many uniform buffers as frames in flight
-    std::vector<vk::raii::Buffer> uniformBuffers;
-    std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
-    std::vector<void*> uniformBuffersMapped;
-
     std::vector<vk::raii::CommandBuffer> commandBuffers;
 
     std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
