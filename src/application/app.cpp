@@ -1,10 +1,13 @@
 module;
 #include <glm/ext/vector_float3.hpp>
 #include <glm/glm.hpp>
+#include <print>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 #include <SDL3/SDL.h>
+#include <chrono>
 #include <print>
+
 export module app;
 import window;
 import event;
@@ -29,17 +32,19 @@ export class Application {
             .setActiveCamera("OrbitCamera");
 
             draw = draw::Draw3D(renderer);
-
-       
-
-
             }
   
 
         void loop() {
-            // std::println("Vert color: {} {} {}", meshes.at(0)->getVertices().at(0));
+            const u32 SAMPLES = 500;
+            auto start = std::chrono::high_resolution_clock::now();
+            auto end = start;
+
+            u32 sampleCount = 0;
+            f64 accum = 0.0;
            while (window.isWindowOpen())
             {
+                start = std::chrono::high_resolution_clock::now(); 
                 event_manager.pollEvents();
                 
                 if (event_manager.isKeyPressed("escape"))
@@ -48,8 +53,14 @@ export class Application {
                 } 
 
                 draw.startDraw();
-                draw.drawSphere(glm::vec3{0.0, 0.0, 0.0}, 1.0);
-                draw.drawSphere(glm::vec3{2.0, 0.0, 0.0}, 2.0);
+                for (u32 i = 0; i < 20; i++)
+                {
+                    for (u32 j = 0; j < 20; j++)
+                    {
+                        draw.drawSphere(glm::vec3{static_cast<float>(2.0 * i) - 10.0, 0.0, static_cast<float>(2.0 * j) - 10.0}, 1.0);
+                    }
+                }
+                
                 draw.endDraw(*camera_controller.getActiveCamera());
                 
                 
@@ -57,6 +68,18 @@ export class Application {
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
                 camera_controller.updateActiveCamera(event_manager);
+               
+                
+                end = std::chrono::high_resolution_clock::now();
+                auto delta = std::chrono::duration<double>(end - start);
+                accum += delta.count();
+                sampleCount++;
+                if (sampleCount >= SAMPLES)
+                {
+                    std::println("{} FPS over {} samples", 1.0 / (accum / SAMPLES) , SAMPLES);
+                    sampleCount = 0;
+                    accum = 0.0;
+                }
                 
                 
                 
