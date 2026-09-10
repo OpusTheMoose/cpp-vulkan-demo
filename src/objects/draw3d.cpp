@@ -35,6 +35,7 @@ export class Draw3D {
                e = renderer.createInstanceBuffer(sizeof(glm::mat4) * 1000);
             }
 
+            lightBuffer = renderer.createInstanceBuffer(sizeof(Light) * 50);
             // Create uniform buffers BEFORE descriptor sets!!
             uniformBuffers = renderer.createUniformBuffers();
             generateSphereData();
@@ -50,11 +51,16 @@ export class Draw3D {
         // Submit for rendering
        auto endDraw(Camera camera) {
         Mesh& sphere = meshes[PrimitiveType::SPHERE];
+        std::vector<Light> lights;
+        lights.emplace_back(glm::vec3(0.0, 5.0, 0.0), glm::vec3(0.8));
+       
         DrawSubmission draw = {
             sphere.vertexBuffer,
             sphere.indexBuffer,
             instanceBuffers[PrimitiveType::SPHERE],
+            lightBuffer,
             sphereInstanceData,
+            lights,
             descriptorSets,
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
@@ -155,7 +161,7 @@ export class Draw3D {
         sphere.vertexBuffer = renderer->createVertexBuffer(sphere.getVertices().data(), sphere.getVertices().size() * sizeof(Vertex));
         sphere.indexBuffer = renderer->createIndexBuffer(sphere.getIndices().data(), sphere.getIndices().size() * sizeof(u16));
 
-        descriptorSets = renderer->createDescriptorSets(instanceBuffers[PrimitiveType::SPHERE].buffers, uniformBuffers);
+        descriptorSets = renderer->createDescriptorSets(instanceBuffers[PrimitiveType::SPHERE].buffers, uniformBuffers, lightBuffer.buffers);
     }
 
     inline auto createModelMatrix(const glm::vec3 pos, const glm::vec3 scale, const glm::quat rot) -> glm::mat4 {
@@ -171,8 +177,11 @@ export class Draw3D {
     std::array<Mesh, static_cast<int>(PrimitiveType::CYLINDER) + 1> meshes;
     std::array<Buffer, static_cast<int>(PrimitiveType::CYLINDER)+1> instanceBuffers; 
 
+    // Buffers for each frame in flight
+    Buffer lightBuffer; 
     std::vector<Buffer> uniformBuffers;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
+    
 
     std::vector<glm::mat4> sphereInstanceData;
   

@@ -44,6 +44,7 @@ export class Application {
             f64 accum = 0.0;
            while (window.isWindowOpen())
             {
+               
                 start = std::chrono::high_resolution_clock::now(); 
                 event_manager.pollEvents();
                 
@@ -53,9 +54,9 @@ export class Application {
                 } 
 
                 draw.startDraw();
-                for (u32 i = 0; i < 20; i++)
+                for (u32 i = 0; i < 30; i++)
                 {
-                    for (u32 j = 0; j < 20; j++)
+                    for (u32 j = 0; j < 30; j++)
                     {
                         draw.drawSphere(glm::vec3{static_cast<float>(2.0 * i) - 10.0, 0.0, static_cast<float>(2.0 * j) - 10.0}, 1.0);
                     }
@@ -79,9 +80,7 @@ export class Application {
                     std::println("{} FPS over {} samples", 1.0 / (accum / SAMPLES) , SAMPLES);
                     sampleCount = 0;
                     accum = 0.0;
-                }
-                
-                
+                }  
                 
             }
             renderer.waitIdle();

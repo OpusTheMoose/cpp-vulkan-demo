@@ -16,6 +16,15 @@ FetchContent_Declare(SDL3
 )
 FetchContent_MakeAvailable(SDL3)
 
+FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG master
+        GIT_SHALLOW TRUE
+        GIT_PROGRESS TRUE
+)
+FetchContent_MakeAvailable(tracy)
+
 find_program(SLANGC_EXECUTABLE slangc REQUIRED)
 
 function (add_slang_shader_target TARGET)
@@ -47,7 +56,7 @@ src/renderer/vulkan_renderer.cpp src/utils/file.cpp src/objects/vertex.cpp src/o
 target_compile_options(game PRIVATE -Wall -Wextra -Wpedantic -Werror -fsanitize=address -g -O3 )
 target_link_options(game PRIVATE -fsanitize=address)
         
-target_link_libraries(game PUBLIC SDL3::SDL3 Vulkan::Vulkan)
+target_link_libraries(game PUBLIC SDL3::SDL3 Vulkan::Vulkan TracyClient)
 add_dependencies(game slang_shaders)
 include(CTest)
 enable_testing()

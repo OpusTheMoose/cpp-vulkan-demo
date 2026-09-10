@@ -7,11 +7,8 @@ module;
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
 #include <glm/trigonometric.hpp>
-#include <print>
 #include <string_view>
 #include <unordered_map>
-#include <optional>
-#include <iostream>
 #include <string>
 #include <utility>
 

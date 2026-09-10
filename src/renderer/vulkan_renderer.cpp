@@ -1,10 +1,12 @@
 module;
 
 
+#include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 
 #include "SDL3/SDL_error.h"
 #include "SDL3/SDL_vulkan.h"
+#include "vulkan/vulkan.hpp"
 #include <SDL3/SDL_video.h>
 
 #include <algorithm>
@@ -43,7 +45,7 @@ constexpr i32 FRAMES_IN_FLIGHT = 2;
 export struct Buffer {
     std::vector<vk::raii::Buffer> buffers;
     std::vector<vk::raii::DeviceMemory> buffersMemory;
-    std::vector<void*> buffersMapped;
+    std::vector<void*> buffersMapped; 
 };
 
 export struct UniformBufferObject {
@@ -51,13 +53,20 @@ export struct UniformBufferObject {
     glm::mat4 proj;
 };
 
+export struct Light {
+    glm::vec3 pos;
+    glm::vec3 color;
+};
+
 
 export struct DrawSubmission {
     Buffer const& vertexBuffer ;
     Buffer const& indexBuffer;
     Buffer const& instanceBuffer;
+    Buffer const& lightBuffer;
     
     std::span<const glm::mat4> instanceData;
+    std::span<const Light> lights;
     std::span<const vk::raii::DescriptorSet> descriptorSets;
 
     u32 indexCount, instanceCount;
@@ -136,20 +145,29 @@ export class VulkanRenderer{
     }
         
 
-    auto updateInstanceBuffer( const Buffer &instance, std::span<const glm::mat4> const& instanceData, u32 currentFrame
-        ) -> void {
-            if (instanceData.size() > 1000) {
-                throw std::runtime_error("Too many instances!");
-
-            }
-
-            memcpy(
-                instance.buffersMapped[currentFrame],
-                instanceData.data(),
-                instanceData.size() * sizeof(glm::mat4)
-            );
-
+    template <typename T>
+    requires std::is_trivially_copyable_v<T>
+    auto updateStorageBuffer( const Buffer &buffer, std::span<const T> data, u32 currentFrame, size_t bufferSize) -> void 
+    {
+        if (currentFrame > buffer.buffersMapped.size())
+        {
+            throw std::out_of_range("Invalid frame index");
         }
+
+        const size_t dataSize = data.size_bytes();
+        if (dataSize > bufferSize){
+            throw std::runtime_error("Storage buffer data is too large");
+        }
+           
+        if (dataSize != 0) {
+            memcpy(
+                buffer.buffersMapped[currentFrame],
+                data.data(),
+                dataSize
+            );
+        }
+
+    }
 
     auto createVertexBuffer(void* data, size_t bufferSize) -> Buffer
     {
@@ -162,7 +180,12 @@ export class VulkanRenderer{
         stagingBuffer.buffersMemory.front().unmapMemory();
 
         auto vertexBuffer =
-            createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+            createBuffer(bufferSize, 
+                               vk::BufferUsageFlagBits::eVertexBuffer |
+                                     vk::BufferUsageFlagBits::eTransferDst |
+                                     vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                                     vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+                , vk::MemoryPropertyFlagBits::eDeviceLocal);
 
         copyBuffer(stagingBuffer.buffers.back(), vertexBuffer.buffers.back(), bufferSize);
 
@@ -204,6 +227,23 @@ export class VulkanRenderer{
         return buffers;
     }
 
+    // Convert mesh geometry to work with acceleration structures 
+    // auto primitiveToGeometry(Buffer& vertexBuffer, Buffer& indexBuffer) -> void {
+    //     vk::AccelerationStructureGeometryTrianglesDataKHR triangles = {};
+    //     triangles.sType = vk::StructureType::eAccelerationStructureGeometryTrianglesDataKHR;
+    //     // vec3 pos for vertex
+    //     triangles.setVertexFormat(vk::Format::eR32G32B32Sfloat);
+    //     triangles.setVertexStride(sizeof(Vertex));
+
+
+    //     vk::BufferDeviceAddressInfo addressInfo;
+    //     addressInfo.setBuffer(*vertexBuffer.buffers.at(0));
+
+
+    //     auto address = device.getBufferAddress(addressInfo);
+
+    // }
+
         auto drawFrame(Camera camera, std::vector<Buffer>& uniformBuffer, DrawSubmission const& draw) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
@@ -231,7 +271,8 @@ export class VulkanRenderer{
             cameraUBO.view = camera.getViewMatrix();
 
             updateUniformBuffer(camera, cameraUBO, uniformBuffer[frameIndex]);
-            updateInstanceBuffer(draw.instanceBuffer, draw.instanceData, frameIndex);
+            updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, sizeof(glm::mat4) * 1000);
+            updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, sizeof(Light) * 50);
             commandBuffers[frameIndex].reset();
             recordCommandBuffer(draw, imageIndex);
 
@@ -274,7 +315,7 @@ export class VulkanRenderer{
         }
 
     // TODO: everything
-    auto createDescriptorSets(std::vector<vk::raii::Buffer> &instanceBuffers, std::vector<Buffer>& uniformBuffers) -> std::vector<vk::raii::DescriptorSet> {
+    auto createDescriptorSets(std::vector<vk::raii::Buffer> &instanceBuffers, std::vector<Buffer>& uniformBuffers, std::vector<vk::raii::Buffer>& lightBuffers) -> std::vector<vk::raii::DescriptorSet> {
         std::vector<vk::DescriptorSetLayout> layouts(FRAMES_IN_FLIGHT, *descriptorSetLayout);
         vk::DescriptorSetAllocateInfo allocInfo;
         std::vector<vk::raii::DescriptorSet> descriptorSets;
@@ -298,7 +339,12 @@ export class VulkanRenderer{
             .setOffset(0)
             .setRange(sizeof(glm::mat4) * 1000);
 
-            std::array<vk::WriteDescriptorSet, 2>   descriptorWrite;
+            vk::DescriptorBufferInfo lightBufferInfo = {};
+            lightBufferInfo.setBuffer(lightBuffers[i])
+            .setOffset(0)
+            .setRange(sizeof(Light) * 50);
+
+            std::array<vk::WriteDescriptorSet, 3>   descriptorWrite;
             descriptorWrite[0].setDstSet(descriptorSets[i])
             .setDstBinding(0)
             .setDstArrayElement(0)
@@ -312,6 +358,13 @@ export class VulkanRenderer{
             .setDescriptorCount(1)
             .setDescriptorType(vk::DescriptorType::eStorageBuffer)
             .setPBufferInfo(&instanceBufferInfo);
+
+            descriptorWrite[2].setDstSet(descriptorSets[i])
+            .setDstBinding(2)
+            .setDstArrayElement(0)
+            .setDescriptorCount(1)
+            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+            .setPBufferInfo(&lightBufferInfo);
 
             device.updateDescriptorSets(descriptorWrite, {});
                                 
@@ -483,7 +536,12 @@ export class VulkanRenderer{
 
     }
 
-    std::vector<const char*> requiredDeviceExtension = {vk::KHRSwapchainExtensionName};
+    std::vector<const char*> requiredDeviceExtension = {
+        vk::KHRSwapchainExtensionName,
+        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
+    };
 
     bool isDeviceSuitable( vk::raii::PhysicalDevice const & physicalDevice )
     {
@@ -509,10 +567,15 @@ export class VulkanRenderer{
   auto features                 = physicalDevice.template getFeatures2<vk::PhysicalDeviceFeatures2,
                                                                        vk::PhysicalDeviceVulkan11Features,
                                                                        vk::PhysicalDeviceVulkan13Features,
-                                                                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+                                                                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+                                                                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+                                                                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+                                                                       >();
   bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
                                   features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
-                                  features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
+                                  features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState &&
+                                  features.template get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>().accelerationStructure &&
+                                  features.template get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>().rayTracingPipeline;
 
   // Return true if the physicalDevice meets all the criteria
   return supportsVulkan1_3 && supportsGraphics && supportsAllRequiredExtensions && supportsRequiredFeatures;
@@ -561,10 +624,12 @@ export class VulkanRenderer{
         // Create a chain of feature structures
         vk::StructureChain<vk::PhysicalDeviceFeatures2,
                    vk::PhysicalDeviceVulkan11Features,
+                   vk::PhysicalDeviceVulkan12Features,
                    vk::PhysicalDeviceVulkan13Features,
                    vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain;
          featureChain.get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters = true;
+        featureChain.get<vk::PhysicalDeviceVulkan12Features>().bufferDeviceAddress = true;
          featureChain.get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering = true;
          featureChain.get<vk::PhysicalDeviceVulkan13Features>().synchronization2 = true;
         featureChain.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState = true;
@@ -904,12 +969,21 @@ export class VulkanRenderer{
         .setUsage(usage)
         .setSharingMode(vk::SharingMode::eExclusive);
 
-
+    
         vk::raii::Buffer       buffer          = vk::raii::Buffer(device, bufferInfo);
         vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
         vk::MemoryAllocateInfo allocInfo = {};
         allocInfo.setAllocationSize(memRequirements.size)
         .setMemoryTypeIndex(findMemoryType(memRequirements.memoryTypeBits, properties));
+
+        vk::MemoryAllocateFlagsInfo flagsInfo = {};
+        if (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)
+        {
+            flagsInfo.setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
+            allocInfo.setPNext(&flagsInfo);
+        }
+
+
         vk::raii::DeviceMemory bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
         buffer.bindMemory(*bufferMemory, 0);
 
@@ -951,7 +1025,13 @@ export class VulkanRenderer{
         .setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eVertex);
 
-        std::array<vk::DescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, instanceLayoutBinding };
+         vk::DescriptorSetLayoutBinding lightsLayoutBinding = {};
+        lightsLayoutBinding.setBinding(2)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+        std::array<vk::DescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, instanceLayoutBinding, lightsLayoutBinding };
 
         vk::DescriptorSetLayoutCreateInfo layoutInfo = {};
         layoutInfo.setBindingCount(static_cast<uint32_t>(bindings.size()))
@@ -976,8 +1056,9 @@ export class VulkanRenderer{
         poolSizes[0].setType(vk::DescriptorType::eUniformBuffer)
         .setDescriptorCount(FRAMES_IN_FLIGHT);
         // Create storage buffer at binding 1 for instancing
+        // There's 2 descriptors per frame in flight
         poolSizes[1].setType(vk::DescriptorType::eStorageBuffer)
-        .setDescriptorCount(FRAMES_IN_FLIGHT);
+        .setDescriptorCount(FRAMES_IN_FLIGHT * 2);
 
         vk::DescriptorPoolCreateInfo poolInfo;
         poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
@@ -1051,8 +1132,29 @@ export class VulkanRenderer{
     vk::raii::PhysicalDevice physicalDevice = nullptr;
     vk::raii::Device device = nullptr;
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline graphicsPipeline = nullptr;
+
+    // Raytracing pipeline
+    vk::raii::PipelineLayout rtPipelineLayout = nullptr;
+    vk::raii::Pipeline raytracingPipeline = nullptr;
+
+    // Bottom and top level acceleration structures 
+    std::vector<vk::raii::AccelerationStructureKHR> blasAccel;
+    vk::raii::AccelerationStructureKHR tlasAccel = nullptr;
+
+    Buffer sbtBuffer; // Shader binding table buffer
+    std::vector<u8> shaderHandles; // opaque shader handles for the table
+    vk::StridedDeviceAddressRangeKHR raygenRegion{};
+    vk::StridedDeviceAddressRangeKHR missRegion{};
+    vk::StridedDeviceAddressRangeKHR hitRegion{};
+    vk::StridedDeviceAddressRangeKHR callableRegion{};
+
+
+
+
+
     vk::raii::CommandPool  commandPool = nullptr; 
 
     vk::raii::Image depthImage = nullptr;
