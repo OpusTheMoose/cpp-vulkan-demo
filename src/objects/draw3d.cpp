@@ -25,6 +25,9 @@ export enum PrimitiveType {
 
 };
 
+
+
+
 export class Draw3D {
     public:
         Draw3D() = default;
@@ -33,7 +36,7 @@ export class Draw3D {
 
             for (auto &e : instanceBuffers)
             {
-               e = renderer.createStorageBuffer(sizeof(glm::mat4) * 1000);
+               e = renderer.createStorageBuffer(sizeof(InstanceData) * 1000);
             }
 
         lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
@@ -81,7 +84,12 @@ export class Draw3D {
        }
 
        auto drawSphere(const glm::vec3 pos, const f32 radius) -> void {
-            sphereInstanceData.emplace_back(createModelMatrix(pos, glm::vec3{radius, radius, radius}, glm::quat(0.0f, 0.0f, 0.0f, 1.0)));
+        glm::mat4 modelMatrix = createModelMatrix(pos, glm::vec3{radius, radius, radius}, glm::quat(0.0f, 0.0f, 0.0f, 1.0));
+            sphereInstanceData.emplace_back(
+                        modelMatrix,
+                        createNormalMatrix(modelMatrix)
+                );
+                
             return;
        }
 
@@ -179,6 +187,17 @@ export class Draw3D {
             model = glm::scale(model, scale);
             return model;
         }
+    inline auto createNormalMatrix(const glm::mat4 model) -> std::array<glm::vec4, 3> 
+    {
+         auto normal =  glm::transpose(glm::inverse(glm::mat3(model)));
+         return std::array<glm::vec4, 3> {
+            glm::vec4(normal[0], 0.0f),
+            glm::vec4(normal[1], 0.0f),
+            glm::vec4(normal[2], 0.0f)
+
+
+         };
+    }
 
 
 
@@ -193,7 +212,7 @@ export class Draw3D {
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     
 
-    std::vector<glm::mat4> sphereInstanceData;
+    std::vector<InstanceData> sphereInstanceData;
   
 };
 

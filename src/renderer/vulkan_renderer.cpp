@@ -61,6 +61,13 @@ export struct Light {
     glm::vec3 color;
 };
 
+export struct InstanceData {
+    glm::mat4x4 model;
+    // For correct alignment 
+    std::array<glm::vec4, 3> normal;
+};
+static_assert(sizeof(InstanceData) == 112);
+
 
 export struct DrawSubmission {
     Buffer const& vertexBuffer ;
@@ -68,7 +75,7 @@ export struct DrawSubmission {
     Buffer const& instanceBuffer;
     Buffer const& lightBuffer;
     
-    std::span<const glm::mat4> instanceData;
+    std::span<const InstanceData> instanceData;
     std::span<const Light> lights;
     std::span<const vk::raii::DescriptorSet> descriptorSets;
 
@@ -270,7 +277,7 @@ export class VulkanRenderer{
             cameraUBO.view = camera.getViewMatrix();
 
             updateUniformBuffer(camera, cameraUBO, uniformBuffer, frameIndex);
-            updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, sizeof(glm::mat4) * 1000);
+            updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceData.size_bytes());
             updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, sizeof(Light) * 50);
             commandBuffers[frameIndex].reset();
             recordCommandBuffer(draw, imageIndex);

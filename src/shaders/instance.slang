@@ -13,16 +13,21 @@ struct UniformBuffer {
 struct Light {
     float3 pos;
     float3 color;
-}
+};
+
+struct Instances {
+    float4x4 model;
+    float4 normal[3];
+};
 
 [[vk::binding(0,0 )]]
 ConstantBuffer<UniformBuffer> ubo;
 
-[[vk::binding(3, 0)]]
-StructuredBuffer<float4x4> instanceModels;
-
 [[vk::binding(2, 0)]]
 StructuredBuffer<Light> lights;
+
+[[vk::binding(3, 0)]]
+StructuredBuffer<Instances> instanceModels;
 
 struct VSOutput {
     float4 pos: SV_Position;
@@ -37,12 +42,17 @@ VSOutput vertMain(VSInput input, uint instanceId: SV_InstanceID) {
   
     VSOutput output;
 
-    float4x4 model = instanceModels[instanceId];
+    float4x4 model = instanceModels[instanceId].model;
+    float3x3 normalMatrix = float3x3(
+        instanceModels[instanceId].normal[0].xyz,
+        instanceModels[instanceId].normal[1].xyz,
+        instanceModels[instanceId].normal[2].xyz
+    );
 
     output.pos = mul(ubo.proj, mul(ubo.view, mul(model, float4(input.inPosition, 1.0))));
     output.worldPos = mul(model, float4(input.inPosition, 1.0)).xyz;
     output.color = input.inColor;
-    output.normal =  input.inNormal;
+    output.normal =  mul(normalMatrix, input.inNormal);
     return output;
 }
 
