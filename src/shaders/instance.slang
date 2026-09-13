@@ -18,7 +18,7 @@ struct Light {
 [[vk::binding(0,0 )]]
 ConstantBuffer<UniformBuffer> ubo;
 
-[[vk::binding(1, 0)]]
+[[vk::binding(3, 0)]]
 StructuredBuffer<float4x4> instanceModels;
 
 [[vk::binding(2, 0)]]

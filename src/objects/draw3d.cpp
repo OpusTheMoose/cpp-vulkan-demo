@@ -30,18 +30,28 @@ export class Draw3D {
         Draw3D() = default;
         Draw3D(VulkanRenderer &renderer) {
             this->renderer = &renderer;
+
             for (auto &e : instanceBuffers)
             {
-               e = renderer.createInstanceBuffer(sizeof(glm::mat4) * 1000);
+               e = renderer.createStorageBuffer(sizeof(glm::mat4) * 1000);
             }
 
-            lightBuffer = renderer.createInstanceBuffer(sizeof(Light) * 50);
+        lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
             // Create uniform buffers BEFORE descriptor sets!!
-            uniformBuffers = renderer.createUniformBuffers();
-            generateSphereData();
+        uniformBuffer = renderer.createUniformBuffers(sizeof(UniformBufferObject));
 
-            
+        passBuffer = renderer.createStorageBuffer(8); // just pass some bs
 
+
+        this->descriptorSets = renderer.allocateDescriptorSets();
+
+        for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
+        {
+            renderer.updateDescriptorSets(descriptorSets[i], uniformBuffer, passBuffer, lightBuffer, instanceBuffers[SPHERE], i);
+        }
+           
+        generateSphereData();
+    
         }
 
         auto startDraw() {
@@ -66,7 +76,7 @@ export class Draw3D {
             static_cast<u32>(sphereInstanceData.size())
         };
  
-        renderer->drawFrame(camera, uniformBuffers, draw);
+        renderer->drawFrame(camera, uniformBuffer, draw);
         
        }
 
@@ -161,7 +171,6 @@ export class Draw3D {
         sphere.vertexBuffer = renderer->createVertexBuffer(sphere.getVertices().data(), sphere.getVertices().size() * sizeof(Vertex));
         sphere.indexBuffer = renderer->createIndexBuffer(sphere.getIndices().data(), sphere.getIndices().size() * sizeof(u16));
 
-        descriptorSets = renderer->createDescriptorSets(instanceBuffers[PrimitiveType::SPHERE].buffers, uniformBuffers, lightBuffer.buffers);
     }
 
     inline auto createModelMatrix(const glm::vec3 pos, const glm::vec3 scale, const glm::quat rot) -> glm::mat4 {
@@ -179,7 +188,8 @@ export class Draw3D {
 
     // Buffers for each frame in flight
     Buffer lightBuffer; 
-    std::vector<Buffer> uniformBuffers;
+    Buffer passBuffer; // UNUSED (for now aga)
+    Buffer uniformBuffer;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     
 

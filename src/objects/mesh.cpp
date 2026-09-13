@@ -59,12 +59,14 @@ export class Mesh {
             model = glm::scale(model, this->scale);
             return model;
         }
+        auto getNormalMatrix() -> glm::mat4 {
+            return glm::transpose(glm::inverse(glm::mat3(getModelMatrix())));
+        }
      
                
         Buffer vertexBuffer;
         Buffer indexBuffer;
-    
-      // std::vector<vk::raii::DescriptorSet> descriptorSets;
+ 
     private:
         glm::vec3 pos = {0.0, 0.0, 0.0};
         glm::vec3 scale = {1.0, 1.0, 1.0};

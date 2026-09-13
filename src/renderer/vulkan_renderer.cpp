@@ -1,6 +1,7 @@
 module;
 
 
+#include <cstddef>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -14,6 +15,7 @@ module;
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
+#include <print>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -39,13 +41,14 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
-constexpr i32 FRAMES_IN_FLIGHT = 2;
+export constexpr i32 FRAMES_IN_FLIGHT = 2;
 
 
 export struct Buffer {
     std::vector<vk::raii::Buffer> buffers;
     std::vector<vk::raii::DeviceMemory> buffersMemory;
-    std::vector<void*> buffersMapped; 
+    std::vector<void*> buffersMapped;
+    size_t bufferSize = 0; 
 };
 
 export struct UniformBufferObject {
@@ -115,7 +118,7 @@ export class VulkanRenderer{
             createImageViews();
         }
 
-    auto createInstanceBuffer(size_t bufferSize) -> Buffer
+    auto createStorageBuffer(size_t bufferSize) -> Buffer
     {
         Buffer instanceBuffer;
 
@@ -141,7 +144,8 @@ export class VulkanRenderer{
             );
         }
 
-    return instanceBuffer;
+        instanceBuffer.bufferSize = bufferSize;
+        return instanceBuffer;
     }
         
 
@@ -149,7 +153,7 @@ export class VulkanRenderer{
     requires std::is_trivially_copyable_v<T>
     auto updateStorageBuffer( const Buffer &buffer, std::span<const T> data, u32 currentFrame, size_t bufferSize) -> void 
     {
-        if (currentFrame > buffer.buffersMapped.size())
+        if (currentFrame >= buffer.buffersMapped.size())
         {
             throw std::out_of_range("Invalid frame index");
         }
@@ -209,42 +213,37 @@ export class VulkanRenderer{
         return indexBuffer;
     }
 
-    auto createUniformBuffers() -> std::vector<Buffer> {
-        std::vector<Buffer> buffers;
-        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
+    auto createUniformBuffers(size_t size) -> Buffer {
+    
+        Buffer uniformBuffer;
+
+        for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; frame++)
         {
-            vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-            Buffer uniformBuffers = createBuffer(
-            bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, 
+            Buffer frameBuffer = createBuffer(
+            size, vk::BufferUsageFlagBits::eUniformBuffer, 
             vk::MemoryPropertyFlagBits::eHostVisible |
-             vk::MemoryPropertyFlagBits::eHostCoherent);
-         
-            uniformBuffers.buffersMapped.emplace_back(
-                uniformBuffers.buffersMemory[0].mapMemory(0, bufferSize)
+            vk::MemoryPropertyFlagBits::eHostCoherent);
+
+         uniformBuffer.buffers.emplace_back(
+                std::move(frameBuffer.buffers.front())
             );
-            buffers.emplace_back(std::move(uniformBuffers));
+
+          uniformBuffer.buffersMemory.emplace_back(
+                std::move(frameBuffer.buffersMemory.front())
+            );
+
+            // No buffer memory mapped yet!
+          uniformBuffer.buffersMapped.emplace_back(
+                uniformBuffer.buffersMemory.back().mapMemory(0, size)
+            );
+
         }
-        return buffers;
+        uniformBuffer.bufferSize = size;
+        return uniformBuffer;
+        
     }
-
-    // Convert mesh geometry to work with acceleration structures 
-    // auto primitiveToGeometry(Buffer& vertexBuffer, Buffer& indexBuffer) -> void {
-    //     vk::AccelerationStructureGeometryTrianglesDataKHR triangles = {};
-    //     triangles.sType = vk::StructureType::eAccelerationStructureGeometryTrianglesDataKHR;
-    //     // vec3 pos for vertex
-    //     triangles.setVertexFormat(vk::Format::eR32G32B32Sfloat);
-    //     triangles.setVertexStride(sizeof(Vertex));
-
-
-    //     vk::BufferDeviceAddressInfo addressInfo;
-    //     addressInfo.setBuffer(*vertexBuffer.buffers.at(0));
-
-
-    //     auto address = device.getBufferAddress(addressInfo);
-
-    // }
-
-        auto drawFrame(Camera camera, std::vector<Buffer>& uniformBuffer, DrawSubmission const& draw) -> void {
+        
+        auto drawFrame(Camera camera, Buffer& uniformBuffer, DrawSubmission const& draw) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -270,7 +269,7 @@ export class VulkanRenderer{
             cameraUBO.proj = camera.getProjMatrix();
             cameraUBO.view = camera.getViewMatrix();
 
-            updateUniformBuffer(camera, cameraUBO, uniformBuffer[frameIndex]);
+            updateUniformBuffer(camera, cameraUBO, uniformBuffer, frameIndex);
             updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, sizeof(glm::mat4) * 1000);
             updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, sizeof(Light) * 50);
             commandBuffers[frameIndex].reset();
@@ -314,8 +313,9 @@ export class VulkanRenderer{
             
         }
 
-    // TODO: everything
-    auto createDescriptorSets(std::vector<vk::raii::Buffer> &instanceBuffers, std::vector<Buffer>& uniformBuffers, std::vector<vk::raii::Buffer>& lightBuffers) -> std::vector<vk::raii::DescriptorSet> {
+
+    auto allocateDescriptorSets() -> std::vector<vk::raii::DescriptorSet>
+    {
         std::vector<vk::DescriptorSetLayout> layouts(FRAMES_IN_FLIGHT, *descriptorSetLayout);
         vk::DescriptorSetAllocateInfo allocInfo;
         std::vector<vk::raii::DescriptorSet> descriptorSets;
@@ -324,55 +324,72 @@ export class VulkanRenderer{
         .setPSetLayouts(layouts.data());
 
 
-        descriptorSets = device.allocateDescriptorSets(allocInfo);
-
-        for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++)
-        {
-            vk::DescriptorBufferInfo bufferInfo = {};
-            bufferInfo.setBuffer(uniformBuffers[i].buffers[0])
-            .setOffset(0)
-            .setRange(sizeof(UniformBufferObject));
-
-            
-            vk::DescriptorBufferInfo instanceBufferInfo = {};
-            instanceBufferInfo.setBuffer(instanceBuffers[i])
-            .setOffset(0)
-            .setRange(sizeof(glm::mat4) * 1000);
-
-            vk::DescriptorBufferInfo lightBufferInfo = {};
-            lightBufferInfo.setBuffer(lightBuffers[i])
-            .setOffset(0)
-            .setRange(sizeof(Light) * 50);
-
-            std::array<vk::WriteDescriptorSet, 3>   descriptorWrite;
-            descriptorWrite[0].setDstSet(descriptorSets[i])
-            .setDstBinding(0)
-            .setDstArrayElement(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setPBufferInfo(&bufferInfo);
-
-            descriptorWrite[1].setDstSet(descriptorSets[i])
-            .setDstBinding(1)
-            .setDstArrayElement(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setPBufferInfo(&instanceBufferInfo);
-
-            descriptorWrite[2].setDstSet(descriptorSets[i])
-            .setDstBinding(2)
-            .setDstArrayElement(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setPBufferInfo(&lightBufferInfo);
-
-            device.updateDescriptorSets(descriptorWrite, {});
-                                
-        }
-
-        return descriptorSets;
-
+        return device.allocateDescriptorSets(allocInfo);
     }
+
+
+    auto updateDescriptorSets(
+    vk::raii::DescriptorSet& set,
+    Buffer const& uniformBuffer,
+    Buffer const& passBuffer,
+    Buffer const& lightBuffer,
+    Buffer const& instanceBuffer,
+    u32 frameIndex) -> void
+    {
+    std::array<vk::DescriptorBufferInfo, 4> bufferInfos = {
+        vk::DescriptorBufferInfo{
+            *uniformBuffer.buffers[frameIndex], 0, uniformBuffer.bufferSize
+        },
+        vk::DescriptorBufferInfo{
+            *passBuffer.buffers[frameIndex], 0, passBuffer.bufferSize
+        },
+        vk::DescriptorBufferInfo{
+            *lightBuffer.buffers[frameIndex], 0, lightBuffer.bufferSize
+        },
+        vk::DescriptorBufferInfo{
+            *instanceBuffer.buffers[frameIndex], 0, instanceBuffer.bufferSize
+        }
+        };
+
+        std::array<vk::WriteDescriptorSet, 4>   descriptorWrite;
+
+         // UBO Descriptor
+        descriptorWrite[0].setDstSet(set)
+        .setDstBinding(0)
+        .setDstArrayElement(0)
+        .setDescriptorCount(1)
+        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+        .setPBufferInfo(&bufferInfos[0]);
+
+        // Per pass buffer (unused currently)
+
+       descriptorWrite[1].setDstSet(set)
+        .setDstBinding(1)
+        .setDstArrayElement(0)
+        .setDescriptorCount(1)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setPBufferInfo(&bufferInfos[1]);
+
+        // Material Buffer
+        descriptorWrite[2].setDstSet(set)
+        .setDstBinding(2)
+        .setDstArrayElement(0)
+        .setDescriptorCount(1)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setPBufferInfo(&bufferInfos[2]);
+
+        // Instance buffer
+        descriptorWrite[3].setDstSet(set)
+        .setDstBinding(3)
+        .setDstArrayElement(0)
+        .setDescriptorCount(1)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setPBufferInfo(&bufferInfos[3]);
+
+         device.updateDescriptorSets(descriptorWrite, {});
+
+    };
+
 
     private:
 
@@ -990,6 +1007,7 @@ export class VulkanRenderer{
         Buffer newBuffer;
         newBuffer.buffers.emplace_back(std::move(buffer));
         newBuffer.buffersMemory.emplace_back(std::move(bufferMemory)); 
+        newBuffer.bufferSize = size;
 
         return newBuffer;
     }
@@ -1012,26 +1030,37 @@ export class VulkanRenderer{
     }
 
     auto createDescriptorSetLayout() -> void {
-       
+      
+        // SET 0 - Global and per-frame data. 
         vk::DescriptorSetLayoutBinding uboLayoutBinding = {};
         uboLayoutBinding.setBinding(0)
         .setDescriptorType(vk::DescriptorType::eUniformBuffer)
         .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 
-        vk::DescriptorSetLayoutBinding instanceLayoutBinding = {};
-        instanceLayoutBinding.setBinding(1)
+        // Per-pass data (unused)
+        vk::DescriptorSetLayoutBinding unusedLayoutBinding = {};
+        unusedLayoutBinding.setBinding(1)
         .setDescriptorType(vk::DescriptorType::eStorageBuffer)
         .setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eVertex);
 
-         vk::DescriptorSetLayoutBinding lightsLayoutBinding = {};
-        lightsLayoutBinding.setBinding(2)
+        // Per-material data
+         vk::DescriptorSetLayoutBinding materialLayoutBinding = {};
+        materialLayoutBinding.setBinding(2)
         .setDescriptorType(vk::DescriptorType::eStorageBuffer)
         .setDescriptorCount(1)
         .setStageFlags(vk::ShaderStageFlagBits::eFragment);
 
-        std::array<vk::DescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, instanceLayoutBinding, lightsLayoutBinding };
+        // Per-object data
+        vk::DescriptorSetLayoutBinding instanceLayoutBinding = {};
+        instanceLayoutBinding.setBinding(3)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setDescriptorCount(1)
+        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
+
+
+        std::array<vk::DescriptorSetLayoutBinding, 4> bindings = { uboLayoutBinding, unusedLayoutBinding, materialLayoutBinding, instanceLayoutBinding };
 
         vk::DescriptorSetLayoutCreateInfo layoutInfo = {};
         layoutInfo.setBindingCount(static_cast<uint32_t>(bindings.size()))
@@ -1043,12 +1072,12 @@ export class VulkanRenderer{
 
   
 
-    auto updateUniformBuffer(Camera& camera, UniformBufferObject& uniformBufferObject, Buffer& ubo) -> void {
+    auto updateUniformBuffer(Camera& camera, UniformBufferObject& uniformBufferObject, Buffer& ubo, u32 frameIndex) -> void {
        
         uniformBufferObject.view = camera.getViewMatrix(); 
         uniformBufferObject.proj = camera.getProjMatrix();
 
-        memcpy(ubo.buffersMapped[0], &uniformBufferObject, sizeof(UniformBufferObject));
+        memcpy(ubo.buffersMapped[frameIndex], &uniformBufferObject, sizeof(UniformBufferObject));
     }
 
     auto createDescriptorPool() -> void {
@@ -1056,9 +1085,9 @@ export class VulkanRenderer{
         poolSizes[0].setType(vk::DescriptorType::eUniformBuffer)
         .setDescriptorCount(FRAMES_IN_FLIGHT);
         // Create storage buffer at binding 1 for instancing
-        // There's 2 descriptors per frame in flight
+        // There's 3 descriptors per frame in flight
         poolSizes[1].setType(vk::DescriptorType::eStorageBuffer)
-        .setDescriptorCount(FRAMES_IN_FLIGHT * 2);
+        .setDescriptorCount(FRAMES_IN_FLIGHT * 3);
 
         vk::DescriptorPoolCreateInfo poolInfo;
         poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
