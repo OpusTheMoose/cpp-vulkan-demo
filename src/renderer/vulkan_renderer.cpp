@@ -123,6 +123,7 @@ export class VulkanRenderer{
 
             createSwapChain();
             createImageViews();
+            createDepthResource();
         }
 
     auto createStorageBuffer(size_t bufferSize) -> Buffer
@@ -961,6 +962,11 @@ export class VulkanRenderer{
 
     auto cleanupSwapChain() -> void {
         swapChainImageViews.clear();
+        
+        depthImageView = nullptr;
+        depthImage = nullptr;
+        depthImageMemory = nullptr;
+
         swapChain = nullptr;
     }
 

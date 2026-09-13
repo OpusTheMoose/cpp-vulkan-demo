@@ -65,7 +65,7 @@ export class Draw3D {
        auto endDraw(Camera camera) {
         Mesh& sphere = meshes[PrimitiveType::SPHERE];
         std::vector<Light> lights;
-        lights.emplace_back(glm::vec3(0.0, 5.0, 0.0), glm::vec3(0.8));
+        lights.emplace_back(glm::vec3(0.0, -5.0, 0.0), glm::vec3(0.8));
        
         DrawSubmission draw = {
             sphere.vertexBuffer,
