@@ -30,3 +30,25 @@ export struct Vertex {
             }};
     }
 };
+
+export struct LineVertex {
+    glm::vec3 pos;
+    glm::vec3 color;
+
+    static vk::VertexInputBindingDescription getBindingDescription()
+    {
+        vk::VertexInputBindingDescription description = {};
+        description.setBinding(0)
+        .setStride(sizeof(LineVertex))
+        .setInputRate(vk::VertexInputRate::eVertex);
+        return description;
+    }
+
+    static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() 
+    {
+        return {{{0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)},
+                {1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)}
+            }};
+    }
+};
+

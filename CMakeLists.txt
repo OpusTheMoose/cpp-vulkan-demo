@@ -27,26 +27,49 @@ FetchContent_MakeAvailable(tracy)
 
 find_program(SLANGC_EXECUTABLE slangc REQUIRED)
 
-function (add_slang_shader_target TARGET)
-  cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
-  set (SHADERS_DIR ${CMAKE_CURRENT_LIST_DIR}/src/shaders)
-  set (ENTRY_POINTS -entry vertMain -entry fragMain)
-  add_custom_command (
-          OUTPUT ${SHADERS_DIR}
-          COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADERS_DIR}
+function(add_slang_shader_target TARGET)
+  cmake_parse_arguments(SHADER "" "" "SOURCES" ${ARGN})
+
+  set(SHADERS_DIR "${CMAKE_CURRENT_LIST_DIR}/src/shaders")
+  set(ENTRY_POINTS
+      -entry vertMain
+      -entry fragMain
   )
-  add_custom_command (
-          OUTPUT  ${SHADERS_DIR}/slang.spv
-          COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o slang.spv
-          WORKING_DIRECTORY ${SHADERS_DIR}
-          DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES}
-          COMMENT "Compiling Slang Shaders"
-          VERBATIM
-  )
-  add_custom_target (${TARGET} DEPENDS ${SHADERS_DIR}/slang.spv)
+  set(SPV_OUTPUTS)
+
+  foreach(SHADER_SOURCE IN LISTS SHADER_SOURCES)
+    get_filename_component(SHADER_NAME "${SHADER_SOURCE}" NAME_WE)
+    set(SPV_OUTPUT "${SHADERS_DIR}/${SHADER_NAME}.spv")
+
+    add_custom_command(
+      OUTPUT "${SPV_OUTPUT}"
+      COMMAND "${SLANGC_EXECUTABLE}"
+              "${SHADER_SOURCE}"
+              -target spirv
+              -profile spirv_1_4
+              -emit-spirv-directly
+              -fvk-use-entrypoint-name
+              ${ENTRY_POINTS}
+              -o "${SPV_OUTPUT}"
+      DEPENDS "${SHADER_SOURCE}"
+      WORKING_DIRECTORY "${SHADERS_DIR}"
+      COMMENT "Compiling ${SHADER_NAME}.slang"
+      VERBATIM
+    )
+
+    list(APPEND SPV_OUTPUTS "${SPV_OUTPUT}")
+  endforeach()
+
+  add_custom_target("${TARGET}" DEPENDS ${SPV_OUTPUTS})
 endfunction()
 
-add_slang_shader_target(slang_shaders SOURCES ${CMAKE_CURRENT_LIST_DIR}/src/shaders/instance.slang)
+add_slang_shader_target(
+  slang_shaders
+  SOURCES
+    "${CMAKE_CURRENT_LIST_DIR}/src/shaders/instance.slang"
+    "${CMAKE_CURRENT_LIST_DIR}/src/shaders/line.slang"
+)
+
 add_executable(game main.cpp  ) 
 
 

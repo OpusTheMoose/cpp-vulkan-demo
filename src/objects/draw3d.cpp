@@ -1,4 +1,5 @@
 module;
+#include <array>
 #include <glm/fwd.hpp>
 #include <vector>
 #include <glm/glm.hpp>
@@ -59,6 +60,8 @@ export class Draw3D {
 
         auto startDraw() {
             sphereInstanceData.clear();
+            lineVertices.clear();
+            lineIndices.clear();
 
         }
         // Submit for rendering
@@ -68,6 +71,7 @@ export class Draw3D {
         lights.emplace_back(glm::vec3(0.0, -5.0, 0.0), glm::vec3(0.8));
        
         DrawSubmission draw = {
+            PipelineType::Mesh,
             sphere.vertexBuffer,
             sphere.indexBuffer,
             instanceBuffers[PrimitiveType::SPHERE],
@@ -81,6 +85,15 @@ export class Draw3D {
  
         renderer->drawFrame(camera, uniformBuffer, draw);
         
+       }
+
+       auto drawLine3D(const glm::vec3 start, const glm::vec3 end, const glm::vec3 color)
+       {
+            lineVertices.emplace_back(start, color);
+            lineVertices.emplace_back(end, color);
+            lineIndices.push_back(lineVertices.size() - 2);
+            lineIndices.push_back(lineVertices.size() - 1);
+
        }
 
        auto drawSphere(const glm::vec3 pos, const f32 radius) -> void {
@@ -203,14 +216,18 @@ export class Draw3D {
 
     VulkanRenderer *renderer;
     std::array<Mesh, static_cast<int>(PrimitiveType::CYLINDER) + 1> meshes;
+    
     std::array<Buffer, static_cast<int>(PrimitiveType::CYLINDER)+1> instanceBuffers; 
+
 
     // Buffers for each frame in flight
     Buffer lightBuffer; 
     Buffer passBuffer; // UNUSED (for now aga)
     Buffer uniformBuffer;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
-    
+
+    std::vector<LineVertex> lineVertices;
+    std::vector<u16> lineIndices;    
 
     std::vector<InstanceData> sphereInstanceData;
   

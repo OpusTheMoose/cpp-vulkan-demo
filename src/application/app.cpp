@@ -61,6 +61,8 @@ export class Application {
                         draw.drawSphere(glm::vec3{static_cast<float>(2.0 * i) - 10.0, 0.0, static_cast<float>(2.0 * j) - 10.0}, 1.0);
                     }
                 }
+                // sphere with light
+                draw.drawSphere(glm::vec3(0.0, -5.0, 0.0), 0.5);
                 
                 draw.endDraw(*camera_controller.getActiveCamera());
                 
