@@ -33,8 +33,7 @@ struct VSOutput {
 VSOutput vertMain(VSInput input) {
   
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(pc.model, float4(input.inPosition, 1.0))));
-    output.worldPos = mul(pc.model, float4(input.inPosition, 1.0)).xyz;
+    output.pos = mul(ubo.proj, mul(ubo.view, mul(pc.model, float4(input.inPosition, 1.0)))); 
     output.color = input.inColor;
     return output;
 }

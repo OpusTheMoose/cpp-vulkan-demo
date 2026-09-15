@@ -23,10 +23,10 @@ struct Instances {
 [[vk::binding(0,0 )]]
 ConstantBuffer<UniformBuffer> ubo;
 
-[[vk::binding(2, 0)]]
+[[vk::binding(0, 2)]]
 StructuredBuffer<Light> lights;
 
-[[vk::binding(3, 0)]]
+[[vk::binding(0, 3)]]
 StructuredBuffer<Instances> instanceModels;
 
 struct VSOutput {

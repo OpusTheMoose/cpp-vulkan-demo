@@ -1,4 +1,5 @@
 module;
+#include "vulkan/vulkan.hpp"
 #include <array>
 #include <glm/fwd.hpp>
 #include <vector>
@@ -28,8 +29,6 @@ export enum PrimitiveType {
 };
 
 
-
-
 export class Draw3D {
     public:
         Draw3D() = default;
@@ -47,14 +46,27 @@ export class Draw3D {
 
             passBuffer = renderer.createStorageBuffer(8); // just pass some bs
 
+            // Per frame
+            this->descriptorSets.layouts[0] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eUniformBuffer);
+            this->descriptorSets.layouts[1] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eStorageBuffer);
+            // per material
+            this->descriptorSets.layouts[2] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eStorageBuffer);
+            // Per object
+            this->descriptorSets.layouts[3] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eStorageBuffer);
 
-            this->descriptorSets = renderer.allocateDescriptorSets();
 
-            for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
-            {
-                renderer.updateDescriptorSets(descriptorSets[i], uniformBuffer, passBuffer, lightBuffer, instanceBuffers[SPHERE], i);
-            }
-           
+            this->descriptorSets.frameSets = renderer.allocateDescriptorSets(descriptorSets.layouts[0], FRAMES_IN_FLIGHT);
+            this->descriptorSets.passSets = renderer.allocateDescriptorSets(descriptorSets.layouts[1], FRAMES_IN_FLIGHT);
+            this->descriptorSets.materialSets = renderer.allocateDescriptorSets(descriptorSets.layouts[2], FRAMES_IN_FLIGHT);
+            this->descriptorSets.instanceSets = renderer.allocateDescriptorSets(descriptorSets.layouts[3], FRAMES_IN_FLIGHT);
+
+            for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
+                renderer.updateDescriptorSet( FRAME, descriptorSets.frameSets[frame], uniformBuffer, frame);
+                renderer.updateDescriptorSet( MATERIAL, descriptorSets.materialSets[frame], lightBuffer, frame);
+                renderer.updateDescriptorSet( OBJECT,   descriptorSets.instanceSets[frame],    instanceBuffers[PrimitiveType::SPHERE], frame);  
+            }   
+            renderer.createGraphicsPipelines(descriptorSets.layouts);
+        
             generateSphereData();
             generateQuadData();
     
@@ -62,6 +74,7 @@ export class Draw3D {
 
         auto startDraw() {
             sphereInstanceData.clear();
+            quadInstanceData.clear();
             lineVertices.clear();
             lineIndices.clear();
 
@@ -79,6 +92,7 @@ export class Draw3D {
             PipelineType::Mesh,
             sphere.vertexBuffer,
             sphere.indexBuffer,
+            uniformBuffer,
             instanceBuffers[PrimitiveType::SPHERE],
             lightBuffer,
             sphereInstanceData,
@@ -96,15 +110,18 @@ export class Draw3D {
             PipelineType::Grid,
             quad.vertexBuffer,
             quad.indexBuffer,
+            uniformBuffer,
             instanceBuffers[PrimitiveType::QUAD],
             lightBuffer,
+
             quadInstanceData,
             lights,
             descriptorSets,
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())
         );
-        renderer->drawFrame(camera, uniformBuffer, drawCalls);
+
+        renderer->drawFrame(camera, drawCalls);
         
        }
 
@@ -269,6 +286,8 @@ export class Draw3D {
 
 
     VulkanRenderer *renderer;
+    Descriptors descriptorSets;
+
     std::array<Mesh, static_cast<int>(PrimitiveType::QUAD) + 1> meshes;
     
     std::array<Buffer, static_cast<int>(PrimitiveType::QUAD)+1> instanceBuffers; 
@@ -278,7 +297,7 @@ export class Draw3D {
     Buffer lightBuffer; 
     Buffer passBuffer; // UNUSED (for now aga)
     Buffer uniformBuffer;
-    std::vector<vk::raii::DescriptorSet> descriptorSets;
+    
 
     std::vector<LineVertex> lineVertices;
     std::vector<u16> lineIndices;    

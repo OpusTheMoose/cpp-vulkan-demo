@@ -66,7 +66,16 @@ export struct InstanceData {
     glm::mat4x4 model;
     // For correct alignment 
     std::array<glm::vec4, 3> normal;
+
 };
+export enum DescriptorSetType {
+    FRAME,
+    PASS,
+    MATERIAL,
+    OBJECT
+};
+
+
 static_assert(sizeof(InstanceData) == 112);
 
 struct Pipeline {
@@ -80,17 +89,30 @@ export enum class PipelineType {
     Grid
 };
 
+export struct Descriptors {
+    std::array<vk::raii::DescriptorSetLayout, 4> layouts = {
+        nullptr, nullptr, nullptr, nullptr
+    };
+    std::vector<vk::raii::DescriptorSet> frameSets;
+    std::vector<vk::raii::DescriptorSet> passSets;
+    std::vector<vk::raii::DescriptorSet> materialSets;
+    std::vector<vk::raii::DescriptorSet> instanceSets;
+
+};
+
 
 export struct DrawSubmission {
     PipelineType type;
-    Buffer const& vertexBuffer ;
+    Buffer const& vertexBuffer;
     Buffer const& indexBuffer;
+
+    Buffer const& uniformBuffer;
     Buffer const& instanceBuffer;
     Buffer const& lightBuffer;
     
     std::span<const InstanceData> instanceData;
     std::span<const Light> lights;
-    std::span<const vk::raii::DescriptorSet> descriptorSets;
+    Descriptors const& descriptorSets;
 
     u32 indexCount, instanceCount;
 };
@@ -108,9 +130,7 @@ export class VulkanRenderer{
                 createLogicalDevice();
                 createSwapChain();
                 createImageViews();
-                createDepthResource();
-                createDescriptorSetLayout();
-                createGraphicsPipelines(); 
+                createDepthResource(); 
                 createCommandPool(); 
                 createDescriptorPool(); 
                 createCommandBuffers();
@@ -139,6 +159,24 @@ export class VulkanRenderer{
             createDepthResource();
         }
 
+
+       auto createDescriptorSetLayout(vk::ShaderStageFlags stageFlags, vk::DescriptorType descriptorSetType) ->  vk::raii::DescriptorSetLayout {
+
+        // SET 0 - Global and per-frame data. 
+        vk::DescriptorSetLayoutBinding layoutBinding = {};
+        layoutBinding.setBinding(0)
+        .setDescriptorType(descriptorSetType)
+        .setDescriptorCount(1)
+        .setStageFlags(stageFlags);
+
+       
+        vk::DescriptorSetLayoutCreateInfo layoutInfo = {};
+        layoutInfo.setBindingCount(1)
+        .setPBindings(&layoutBinding);
+
+        return vk::raii::DescriptorSetLayout(device, layoutInfo);
+
+        }
     auto createStorageBuffer(size_t bufferSize) -> Buffer
     {
         Buffer instanceBuffer;
@@ -168,6 +206,8 @@ export class VulkanRenderer{
         instanceBuffer.bufferSize = bufferSize;
         return instanceBuffer;
     }
+
+    
         
 
     template <typename T>
@@ -263,8 +303,47 @@ export class VulkanRenderer{
         return uniformBuffer;
         
     }
+
+    // Creates all the graphics pieplines
+    auto createGraphicsPipelines(std::span<const vk::raii::DescriptorSetLayout> layouts) -> void {
+
+
+        std::vector<vk::DescriptorSetLayout> layoutHandles;
+        layoutHandles.reserve(layouts.size());
+
+        for (const auto& layout : layouts) {
+        layoutHandles.push_back(*layout);
+        }
+    
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
+        pipelineLayoutInfo.setSetLayouts(layoutHandles);
+
+        vk::raii::PipelineLayout pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+
+
+        vk::PushConstantRange gridPushConstant;
+        gridPushConstant.setStageFlags(vk::ShaderStageFlagBits::eVertex)
+        .setOffset(0)
+        .setSize(sizeof(glm::mat4));
+
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo2;
+        pipelineLayoutInfo2.setSetLayoutCount(1)
+        .setSetLayouts(layoutHandles)
+        .setPushConstantRangeCount(1)
+        .setPPushConstantRanges(&gridPushConstant);
+
+
+        vk::raii::PipelineLayout pipelineLayout2 = vk::raii::PipelineLayout(device, pipelineLayoutInfo2);
+
+
+        pipelines[PipelineType::Mesh] = Pipeline{ createGraphicsPipeline("src/shaders/instance.spv", pipelineLayout), std::move(pipelineLayout) };
+        pipelines[PipelineType::Grid] = Pipeline{ createGraphicsPipeline("src/shaders/grid_floor.spv", pipelineLayout2), std::move(pipelineLayout2) };
+
+
+
+    }
         
-        auto drawFrame(Camera camera, Buffer& uniformBuffer, std::span<DrawSubmission> const& drawCalls) -> void {
+        auto drawFrame(Camera camera, std::span<DrawSubmission> const& drawCalls) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -290,13 +369,15 @@ export class VulkanRenderer{
             cameraUBO.proj = camera.getProjMatrix();
             cameraUBO.view = camera.getViewMatrix();
 
-            updateUniformBuffer(camera, cameraUBO, uniformBuffer, frameIndex);
             for (auto draw : drawCalls)
             {
+                updateUniformBuffer(camera, cameraUBO, draw.uniformBuffer, frameIndex);
+
                 updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceBuffer.bufferSize);
                 updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, draw.lightBuffer.bufferSize);
-           
+
             }
+            
 
             commandBuffers[frameIndex].reset();
             recordCommandBuffer(drawCalls, imageIndex);
@@ -340,82 +421,64 @@ export class VulkanRenderer{
         }
 
 
-    auto allocateDescriptorSets() -> std::vector<vk::raii::DescriptorSet>
+    auto allocateDescriptorSets(vk::raii::DescriptorSetLayout const& layout, u32 count) -> std::vector<vk::raii::DescriptorSet>
     {
-        std::vector<vk::DescriptorSetLayout> layouts(FRAMES_IN_FLIGHT, *descriptorSetLayout);
+        std::vector<vk::DescriptorSetLayout> layouts(count, layout);
         vk::DescriptorSetAllocateInfo allocInfo;
         std::vector<vk::raii::DescriptorSet> descriptorSets;
         allocInfo.setDescriptorPool(descriptorPool)
-        .setDescriptorSetCount(static_cast<u32>(layouts.size()))
-        .setPSetLayouts(layouts.data());
-
-
+            .setDescriptorSetCount(static_cast<u32>(layouts.size()))
+            .setPSetLayouts(layouts.data());
         return device.allocateDescriptorSets(allocInfo);
     }
 
+    
 
-    auto updateDescriptorSets(
-    vk::raii::DescriptorSet& set,
-    Buffer const& uniformBuffer,
-    Buffer const& passBuffer,
-    Buffer const& lightBuffer,
-    Buffer const& instanceBuffer,
-    u32 frameIndex) -> void
+    auto updateDescriptorSet(DescriptorSetType type, vk::raii::DescriptorSet& set, Buffer const& buffer, u32 frameIndex)
     {
-    std::array<vk::DescriptorBufferInfo, 4> bufferInfos = {
-        vk::DescriptorBufferInfo{
-            *uniformBuffer.buffers[frameIndex], 0, uniformBuffer.bufferSize
-        },
-        vk::DescriptorBufferInfo{
-            *passBuffer.buffers[frameIndex], 0, passBuffer.bufferSize
-        },
-        vk::DescriptorBufferInfo{
-            *lightBuffer.buffers[frameIndex], 0, lightBuffer.bufferSize
-        },
-        vk::DescriptorBufferInfo{
-            *instanceBuffer.buffers[frameIndex], 0, instanceBuffer.bufferSize
-        }
+        vk::DescriptorBufferInfo bufferInfo {
+            *buffer.buffers[frameIndex], 0, buffer.bufferSize
         };
+        vk::WriteDescriptorSet write;
 
-        std::array<vk::WriteDescriptorSet, 4>   descriptorWrite;
+        switch (type)
+        {
+            case FRAME:
+                write.setDstSet(set)
+                    .setDstBinding(0)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                    .setPBufferInfo(&bufferInfo);
 
-         // UBO Descriptor
-        descriptorWrite[0].setDstSet(set)
-        .setDstBinding(0)
-        .setDstArrayElement(0)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-        .setPBufferInfo(&bufferInfos[0]);
+                break;
 
-        // Per pass buffer (unused currently)
+            case PASS:
+                break;
 
-       descriptorWrite[1].setDstSet(set)
-        .setDstBinding(1)
-        .setDstArrayElement(0)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-        .setPBufferInfo(&bufferInfos[1]);
+            case MATERIAL:
+                write.setDstSet(set)
+                    .setDstBinding(0)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+                    .setPBufferInfo(&bufferInfo);
+                break;
 
-        // Material Buffer
-        descriptorWrite[2].setDstSet(set)
-        .setDstBinding(2)
-        .setDstArrayElement(0)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-        .setPBufferInfo(&bufferInfos[2]);
+            case OBJECT:
+                 write.setDstSet(set)
+                    .setDstBinding(0)
+                    .setDescriptorCount(1)
+                    .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+                    .setPBufferInfo(&bufferInfo);
+                break;
 
-        // Instance buffer
-        descriptorWrite[3].setDstSet(set)
-        .setDstBinding(3)
-        .setDstArrayElement(0)
-        .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-        .setPBufferInfo(&bufferInfos[3]);
+            default:
+                return;
+                break;
+        };
+        device.updateDescriptorSets(write, {});
 
-         device.updateDescriptorSets(descriptorWrite, {});
 
-    };
-
+    }
 
     private:
 
@@ -477,20 +540,21 @@ export class VulkanRenderer{
             switch (draw.type) {
                 case PipelineType::Mesh:
                     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].pipeline);
-                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
                     break;
                 case PipelineType::Line:
                     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].pipeline);
-                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
                     break;
                 case PipelineType::Grid:
                     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].pipeline);
-                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
-                    commandBuffer.pushConstants<glm::mat4>(*pipelines[PipelineType::Grid].layout, vk::ShaderStageFlagBits::eVertex, 0, glm::identity<glm::mat4>());
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
+                    // Grid is a special type, so we're fine with just taking the first value in instance data. cause there PROBABLY WONT BE more than 1
+                    commandBuffer.pushConstants<glm::mat4>(*pipelines[PipelineType::Grid].layout, vk::ShaderStageFlagBits::eVertex, 0, draw.instanceData[0].model);
                     break;
             }
-               
-                       
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelines[draw.type].layout, 0, *draw.descriptorSets.frameSets[frameIndex], nullptr);         
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelines[draw.type].layout, 2, *draw.descriptorSets.materialSets[frameIndex], nullptr);         
         commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
         commandBuffer.bindIndexBuffer(draw.indexBuffer.buffers[0], 0, vk::IndexType::eUint16);
         commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
@@ -802,38 +866,7 @@ export class VulkanRenderer{
 
     }
 
-    // Creates all the graphics pieplines
-    auto createGraphicsPipelines() -> void {
-
     
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-        pipelineLayoutInfo.setSetLayoutCount(1)
-        .setPSetLayouts(&*descriptorSetLayout);
-
-        vk::raii::PipelineLayout pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
-
-
-        vk::PushConstantRange gridPushConstant;
-        gridPushConstant.setStageFlags(vk::ShaderStageFlagBits::eVertex)
-        .setOffset(0)
-        .setSize(sizeof(glm::mat4));
-
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo2;
-        pipelineLayoutInfo2.setSetLayoutCount(1)
-        .setPSetLayouts(&*descriptorSetLayout)
-        .setPushConstantRangeCount(1)
-        .setPPushConstantRanges(&gridPushConstant);
-
-
-        vk::raii::PipelineLayout pipelineLayout2 = vk::raii::PipelineLayout(device, pipelineLayoutInfo2);
-
-
-        pipelines[PipelineType::Mesh] = Pipeline{ createGraphicsPipeline("src/shaders/instance.spv", pipelineLayout), std::move(pipelineLayout) };
-        pipelines[PipelineType::Grid] = Pipeline{ createGraphicsPipeline("src/shaders/grid_floor.spv", pipelineLayout2), std::move(pipelineLayout2) };
-
-
-
-    }
     auto createGraphicsPipeline(const std::string &shaderPath, vk::PipelineLayout layout) -> vk::raii::Pipeline {
         auto shaderModule = createShaderModule(readFile(shaderPath));
         vk::PipelineShaderStageCreateInfo vertShaderStagInfo;
@@ -1105,50 +1138,11 @@ export class VulkanRenderer{
 
     }
 
-    auto createDescriptorSetLayout() -> void {
-      
-        // SET 0 - Global and per-frame data. 
-        vk::DescriptorSetLayoutBinding uboLayoutBinding = {};
-        uboLayoutBinding.setBinding(0)
-        .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
-
-        // Per-pass data (unused)
-        vk::DescriptorSetLayoutBinding unusedLayoutBinding = {};
-        unusedLayoutBinding.setBinding(1)
-        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
-
-        // Per-material data
-         vk::DescriptorSetLayoutBinding materialLayoutBinding = {};
-        materialLayoutBinding.setBinding(2)
-        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eFragment);
-
-        // Per-object data
-        vk::DescriptorSetLayoutBinding instanceLayoutBinding = {};
-        instanceLayoutBinding.setBinding(3)
-        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-        .setDescriptorCount(1)
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex);
-
-
-        std::array<vk::DescriptorSetLayoutBinding, 4> bindings = { uboLayoutBinding, unusedLayoutBinding, materialLayoutBinding, instanceLayoutBinding };
-
-        vk::DescriptorSetLayoutCreateInfo layoutInfo = {};
-        layoutInfo.setBindingCount(static_cast<uint32_t>(bindings.size()))
-            .setPBindings(bindings.data());
-
-        descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
-
-    }
+ 
 
   
 
-    auto updateUniformBuffer(Camera& camera, UniformBufferObject& uniformBufferObject, Buffer& ubo, u32 frameIndex) -> void {
+    auto updateUniformBuffer(Camera& camera, UniformBufferObject& uniformBufferObject, const Buffer& ubo, u32 frameIndex) -> void {
        
         uniformBufferObject.view = camera.getViewMatrix(); 
         uniformBufferObject.proj = camera.getProjMatrix();
@@ -1167,7 +1161,7 @@ export class VulkanRenderer{
 
         vk::DescriptorPoolCreateInfo poolInfo;
         poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-        .setMaxSets(FRAMES_IN_FLIGHT)
+        .setMaxSets(FRAMES_IN_FLIGHT * 4) // Four descriptor sets
         .setPoolSizeCount(poolSizes.size())
         .setPPoolSizes(poolSizes.data());
 
@@ -1236,7 +1230,7 @@ export class VulkanRenderer{
     vk::raii::Queue graphicsQueue = nullptr; 
     vk::raii::PhysicalDevice physicalDevice = nullptr;
     vk::raii::Device device = nullptr;
-    vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+    
 
     std::unordered_map<PipelineType, Pipeline>  pipelines;
 
