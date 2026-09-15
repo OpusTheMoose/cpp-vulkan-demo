@@ -68,6 +68,8 @@ add_slang_shader_target(
   SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/src/shaders/instance.slang"
     "${CMAKE_CURRENT_LIST_DIR}/src/shaders/line.slang"
+    "${CMAKE_CURRENT_LIST_DIR}/src/shaders/grid_floor.slang"
+
 )
 
 add_executable(game main.cpp  ) 

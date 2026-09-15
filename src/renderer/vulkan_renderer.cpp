@@ -2,6 +2,7 @@ module;
 
 
 #include <cstddef>
+#include <glm/ext/matrix_transform.hpp>
 #include <unordered_map>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
@@ -75,7 +76,8 @@ struct Pipeline {
 
 export enum class PipelineType {
     Mesh,
-    Line
+    Line,
+    Grid
 };
 
 
@@ -262,7 +264,7 @@ export class VulkanRenderer{
         
     }
         
-        auto drawFrame(Camera camera, Buffer& uniformBuffer, DrawSubmission const& draw) -> void {
+        auto drawFrame(Camera camera, Buffer& uniformBuffer, std::span<DrawSubmission> const& drawCalls) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -289,10 +291,15 @@ export class VulkanRenderer{
             cameraUBO.view = camera.getViewMatrix();
 
             updateUniformBuffer(camera, cameraUBO, uniformBuffer, frameIndex);
-            updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceData.size_bytes());
-            updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, sizeof(Light) * 50);
+            for (auto draw : drawCalls)
+            {
+                updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceBuffer.bufferSize);
+                updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, draw.lightBuffer.bufferSize);
+           
+            }
+
             commandBuffers[frameIndex].reset();
-            recordCommandBuffer(draw, imageIndex);
+            recordCommandBuffer(drawCalls, imageIndex);
 
             graphicsQueue.waitIdle();
 
@@ -412,7 +419,7 @@ export class VulkanRenderer{
 
     private:
 
-    auto recordCommandBuffer( DrawSubmission const& draw, u32 imageIndex) -> void
+    auto recordCommandBuffer(std::span<DrawSubmission> drawCalls, u32 imageIndex) -> void
     {
         auto &commandBuffer = commandBuffers[frameIndex];
         commandBuffer.begin({});
@@ -465,27 +472,30 @@ export class VulkanRenderer{
         commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-        switch (draw.type) {
-            case PipelineType::Mesh:
-                commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].pipeline);
-                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
-                break;
-            case PipelineType::Line:
-                 commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].pipeline);
-                  commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
-                 break;
-
-
-        }
+        for (auto const& draw : drawCalls)
+        {
+            switch (draw.type) {
+                case PipelineType::Mesh:
+                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].pipeline);
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
+                    break;
+                case PipelineType::Line:
+                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].pipeline);
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
+                    break;
+                case PipelineType::Grid:
+                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].pipeline);
+                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].layout, 0, *draw.descriptorSets[frameIndex], nullptr);
+                    commandBuffer.pushConstants<glm::mat4>(*pipelines[PipelineType::Grid].layout, vk::ShaderStageFlagBits::eVertex, 0, glm::identity<glm::mat4>());
+                    break;
+            }
                
-                
-       
-
-       
+                       
         commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
         commandBuffer.bindIndexBuffer(draw.indexBuffer.buffers[0], 0, vk::IndexType::eUint16);
         commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
            
+        }
         
 
         commandBuffer.endRendering();
@@ -803,7 +813,24 @@ export class VulkanRenderer{
         vk::raii::PipelineLayout pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
 
+        vk::PushConstantRange gridPushConstant;
+        gridPushConstant.setStageFlags(vk::ShaderStageFlagBits::eVertex)
+        .setOffset(0)
+        .setSize(sizeof(glm::mat4));
+
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo2;
+        pipelineLayoutInfo2.setSetLayoutCount(1)
+        .setPSetLayouts(&*descriptorSetLayout)
+        .setPushConstantRangeCount(1)
+        .setPPushConstantRanges(&gridPushConstant);
+
+
+        vk::raii::PipelineLayout pipelineLayout2 = vk::raii::PipelineLayout(device, pipelineLayoutInfo2);
+
+
         pipelines[PipelineType::Mesh] = Pipeline{ createGraphicsPipeline("src/shaders/instance.spv", pipelineLayout), std::move(pipelineLayout) };
+        pipelines[PipelineType::Grid] = Pipeline{ createGraphicsPipeline("src/shaders/grid_floor.spv", pipelineLayout2), std::move(pipelineLayout2) };
+
 
 
     }
@@ -908,104 +935,7 @@ export class VulkanRenderer{
         return  pipeline;
     }
 
-    //   auto createLineGraphicsPipeline() -> void {
-    //     auto shaderModule = createShaderModule(readFile("src/shaders/line.spv"));
-    //     vk::PipelineShaderStageCreateInfo vertShaderStagInfo;
-    //     vertShaderStagInfo.stage = vk::ShaderStageFlagBits::eVertex;
-    //     vertShaderStagInfo.module = shaderModule;
-    //     vertShaderStagInfo.pName = "vertMain";
-
-    //     vk::PipelineShaderStageCreateInfo fragShaderStagInfo;
-    //     fragShaderStagInfo.stage = vk::ShaderStageFlagBits::eFragment;
-    //     fragShaderStagInfo.module = shaderModule;
-    //     fragShaderStagInfo.pName = "fragMain";
-
-    //     vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStagInfo, fragShaderStagInfo};
-
-    //     auto  bindingDescription    = LineVertex::getBindingDescription();
-    //     auto  attributeDescriptions = LineVertex::getAttributeDescriptions();
-
-    //     vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-    //     vertexInputInfo.setVertexBindingDescriptionCount(1)
-    //     .setPVertexBindingDescriptions(&bindingDescription)
-    //     .setVertexAttributeDescriptionCount(static_cast<u32>(attributeDescriptions.size()))
-    //     .setPVertexAttributeDescriptions(attributeDescriptions.data());
-
-
-    //     vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
-    //     inputAssembly.topology = vk::PrimitiveTopology::eLineList;
-    //     vk::PipelineViewportStateCreateInfo viewportState;
-    //     viewportState.viewportCount = 1;
-    //     viewportState.scissorCount = 1;
-
-    //     std::vector<vk::DynamicState>      dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
-	// 	vk::PipelineDynamicStateCreateInfo dynamicState;
-    //     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    //     dynamicState.pDynamicStates = dynamicStates.data();
-
-
-    //     vk::PipelineRasterizationStateCreateInfo rasterizer;
-    //     rasterizer.setDepthClampEnable(vk::False)
-    //     .setRasterizerDiscardEnable(vk::False)
-    //     .setPolygonMode(vk::PolygonMode::eFill)
-    //     .setCullMode(vk::CullModeFlagBits::eNone)
-    //     .setFrontFace(vk::FrontFace::eCounterClockwise)
-    //     .setDepthBiasEnable(vk::False)
-    //     .setLineWidth(1.0f);
-
-    //     vk::PipelineDepthStencilStateCreateInfo depthStencil = {};
-    //     depthStencil.setDepthTestEnable(vk::True)
-    //     .setDepthWriteEnable(vk::True)
-    //     .setDepthCompareOp(vk::CompareOp::eLess)
-    //     .setDepthBoundsTestEnable(vk::False)
-    //     .setStencilTestEnable(vk::False);
-
-    //     vk::PipelineMultisampleStateCreateInfo multisampling;
-    //     multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-    //     multisampling.sampleShadingEnable = vk::False;
-
-    //     vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-    //     colorBlendAttachment.blendEnable = vk::False;
-    //     colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-
-    //     vk::PipelineColorBlendStateCreateInfo colorBlending;
-    //     colorBlending.logicOpEnable = vk::False;
-    //     colorBlending.logicOp = vk::LogicOp::eCopy;
-    //     colorBlending.attachmentCount = 1;
-    //     colorBlending.pAttachments = &colorBlendAttachment;
-
-
-    //     vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-    //     pipelineLayoutInfo.setSetLayoutCount(1)
-    //     .setPSetLayouts(&*descriptorSetLayout);
-
-    //     linePipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
-
-    //     vk::PipelineRenderingCreateInfo pipelineRenderingInfo = {};
-    //     pipelineRenderingInfo.setColorAttachmentCount(1)
-    //     .setPColorAttachmentFormats(&swapChainSurfaceFormat.format)
-    //     .setDepthAttachmentFormat(vk::Format::eD32Sfloat);
-
-    //     vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain;
-    //     pipelineCreateInfoChain.get().setStageCount(2)
-    //     .setPStages(shaderStages)
-    //     .setPVertexInputState(&vertexInputInfo)
-    //     .setPInputAssemblyState(&inputAssembly)
-    //     .setPDepthStencilState(&depthStencil)
-    //     .setPViewportState(&viewportState)
-    //     .setPRasterizationState(&rasterizer)
-    //     .setPMultisampleState(&multisampling)
-    //     .setPColorBlendState(&colorBlending)
-    //     .setPDynamicState(&dynamicState)
-    //     .setLayout(pipelineLayout)
-    //     .setRenderPass(nullptr);
-    //     pipelineCreateInfoChain.assign(pipelineRenderingInfo);
-
-    //     linePipeline = vk::raii::Pipeline(device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-
-
-    //     logger.log(LogLevel::INFO, "Line graphics pipeline created");
-    // }
+    
 
     [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const
     {

@@ -7,23 +7,19 @@ struct VSInput {
 
 struct UniformBuffer { 
     float4x4 view;
-    float4x4 proj;
+    float4x4 proj; 
 };
 
 
-
-struct Instances {
-    float4x4 model;
-    float4 normal[3];
-};
-
-[[vk::binding(0,0 )]]
+[[vk::binding(0,0)]]
 ConstantBuffer<UniformBuffer> ubo;
 
+struct PushConstants{
+    float4x4 model;
+};
 
-
-[[vk::binding(3, 0)]]
-StructuredBuffer<Instances> instanceModels;
+[[vk_push_constant]] 
+PushConstants pc; 
 
 struct VSOutput {
     float4 pos: SV_Position;
@@ -34,21 +30,12 @@ struct VSOutput {
 
 
 [shader("vertex")]
-VSOutput vertMain(VSInput input, uint instanceId: SV_InstanceID) {
+VSOutput vertMain(VSInput input) {
   
     VSOutput output;
-
-    float4x4 model = instanceModels[instanceId].model;
-    float3x3 normalMatrix = float3x3(
-        instanceModels[instanceId].normal[0].xyz,
-        instanceModels[instanceId].normal[1].xyz,
-        instanceModels[instanceId].normal[2].xyz
-    );
-
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(model, float4(input.inPosition, 1.0))));
-    output.worldPos = mul(model, float4(input.inPosition, 1.0)).xyz;
+    output.pos = mul(ubo.proj, mul(ubo.view, mul(pc.model, float4(input.inPosition, 1.0))));
+    output.worldPos = mul(pc.model, float4(input.inPosition, 1.0)).xyz;
     output.color = input.inColor;
-    output.normal =  mul(normalMatrix, input.inNormal);
     return output;
 }
 

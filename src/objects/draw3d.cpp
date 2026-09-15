@@ -22,7 +22,8 @@ export enum PrimitiveType {
         LINE3D = 0,
         SPHERE = 1,
         CUBE = 2,
-        CYLINDER = 3
+        CYLINDER = 3,
+        QUAD = 4
 
 };
 
@@ -40,21 +41,22 @@ export class Draw3D {
                e = renderer.createStorageBuffer(sizeof(InstanceData) * 1000);
             }
 
-        lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
+            lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
             // Create uniform buffers BEFORE descriptor sets!!
-        uniformBuffer = renderer.createUniformBuffers(sizeof(UniformBufferObject));
+            uniformBuffer = renderer.createUniformBuffers(sizeof(UniformBufferObject));
 
-        passBuffer = renderer.createStorageBuffer(8); // just pass some bs
+            passBuffer = renderer.createStorageBuffer(8); // just pass some bs
 
 
-        this->descriptorSets = renderer.allocateDescriptorSets();
+            this->descriptorSets = renderer.allocateDescriptorSets();
 
-        for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
-        {
-            renderer.updateDescriptorSets(descriptorSets[i], uniformBuffer, passBuffer, lightBuffer, instanceBuffers[SPHERE], i);
-        }
+            for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
+            {
+                renderer.updateDescriptorSets(descriptorSets[i], uniformBuffer, passBuffer, lightBuffer, instanceBuffers[SPHERE], i);
+            }
            
-        generateSphereData();
+            generateSphereData();
+            generateQuadData();
     
         }
 
@@ -66,11 +68,14 @@ export class Draw3D {
         }
         // Submit for rendering
        auto endDraw(Camera camera) {
+
         Mesh& sphere = meshes[PrimitiveType::SPHERE];
         std::vector<Light> lights;
         lights.emplace_back(glm::vec3(0.0, -5.0, 0.0), glm::vec3(0.8));
+        
+        std::vector<DrawSubmission> drawCalls;
        
-        DrawSubmission draw = {
+        drawCalls.emplace_back(
             PipelineType::Mesh,
             sphere.vertexBuffer,
             sphere.indexBuffer,
@@ -81,9 +86,25 @@ export class Draw3D {
             descriptorSets,
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
-        };
- 
-        renderer->drawFrame(camera, uniformBuffer, draw);
+        );
+
+        // Draw the grid specifically 
+         Mesh& quad = meshes[PrimitiveType::QUAD];
+
+
+        drawCalls.emplace_back(
+            PipelineType::Grid,
+            quad.vertexBuffer,
+            quad.indexBuffer,
+            instanceBuffers[PrimitiveType::QUAD],
+            lightBuffer,
+            quadInstanceData,
+            lights,
+            descriptorSets,
+            static_cast<u32>(quad.getIndices().size()),
+            static_cast<u32>(quadInstanceData.size())
+        );
+        renderer->drawFrame(camera, uniformBuffer, drawCalls);
         
        }
 
@@ -105,6 +126,15 @@ export class Draw3D {
                 
             return;
        }
+        auto drawQuad(const glm::vec3 pos, const glm::vec3 scale) -> void {
+        glm::mat4 modelMatrix = createModelMatrix(pos, scale, glm::quat(0.0f, 0.0f, 0.0f, 1.0));
+            quadInstanceData.emplace_back(
+                        modelMatrix,
+                        createNormalMatrix(modelMatrix)
+                );
+       }
+
+       
 
               
 
@@ -193,6 +223,30 @@ export class Draw3D {
         sphere.indexBuffer = renderer->createIndexBuffer(sphere.getIndices().data(), sphere.getIndices().size() * sizeof(u16));
 
     }
+    
+    auto generateQuadData() -> void {
+        std::vector<Vertex> quad;
+        std::vector<u16> indices;
+        // top left
+        quad.emplace_back(glm::vec3{-1.0, 0.0, 1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{0.0, 0.0}, glm::vec3{0.0, 1.0, 0.0} );
+        // bottom left
+        quad.emplace_back(glm::vec3{-1.0, 0.0, -1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{0.0, 1.0}, glm::vec3{0.0, 1.0, 0.0} );
+        // bottom right
+        quad.emplace_back(glm::vec3{1.0, 0.0, -1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 0.0}, glm::vec3{0.0, 1.0, 0.0} );
+        // top right
+        quad.emplace_back(glm::vec3{1.0, 0.0, 1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 1.0}, glm::vec3{0.0, 1.0, 0.0} );
+
+        indices = {
+            0, 1, 2, 0, 2, 3
+        };
+        meshes[PrimitiveType::QUAD] = Mesh(quad, indices);
+        Mesh &quadMesh = meshes[PrimitiveType::QUAD];
+        quadMesh.vertexBuffer = renderer->createVertexBuffer(quadMesh.getVertices().data(), quadMesh.getVertices().size() * sizeof(Vertex));
+        quadMesh.indexBuffer = renderer->createIndexBuffer(quadMesh.getIndices().data(), quadMesh.getIndices().size() * sizeof(u16));
+
+
+
+    }
 
     inline auto createModelMatrix(const glm::vec3 pos, const glm::vec3 scale, const glm::quat rot) -> glm::mat4 {
             glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
@@ -215,9 +269,9 @@ export class Draw3D {
 
 
     VulkanRenderer *renderer;
-    std::array<Mesh, static_cast<int>(PrimitiveType::CYLINDER) + 1> meshes;
+    std::array<Mesh, static_cast<int>(PrimitiveType::QUAD) + 1> meshes;
     
-    std::array<Buffer, static_cast<int>(PrimitiveType::CYLINDER)+1> instanceBuffers; 
+    std::array<Buffer, static_cast<int>(PrimitiveType::QUAD)+1> instanceBuffers; 
 
 
     // Buffers for each frame in flight
@@ -230,6 +284,7 @@ export class Draw3D {
     std::vector<u16> lineIndices;    
 
     std::vector<InstanceData> sphereInstanceData;
+    std::vector<InstanceData> quadInstanceData;
   
 };
 
