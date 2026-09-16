@@ -159,6 +159,18 @@ export class VulkanRenderer{
             createDepthResource();
         }
 
+    [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const
+    {
+        vk::ShaderModuleCreateInfo info;
+        info.codeSize = code.size() * sizeof(char);
+        info.pCode = reinterpret_cast<const u32*>(code.data());
+        return vk::raii::ShaderModule(device, info); 
+
+    }
+    auto getCurrentDevice() -> const vk::raii::Device& {
+        return this->device;
+    }
+
 
        auto createDescriptorSetLayout(vk::ShaderStageFlags stageFlags, vk::DescriptorType descriptorSetType) ->  vk::raii::DescriptorSetLayout {
 
@@ -900,10 +912,7 @@ export class VulkanRenderer{
         std::vector<vk::DynamicState>      dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
 		vk::PipelineDynamicStateCreateInfo dynamicState;
         dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-        dynamicState.pDynamicStates = dynamicStates.data();
-
-        //vk::Viewport viewport{0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f};
-        //vk::Rect2D scissor{vk::Offset2D{0, 0}, swapChainExtent};
+        dynamicState.pDynamicStates = dynamicStates.data(); 
 
         vk::PipelineRasterizationStateCreateInfo rasterizer;
         rasterizer.depthClampEnable        = vk::False;
@@ -970,14 +979,7 @@ export class VulkanRenderer{
 
     
 
-    [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const
-    {
-        vk::ShaderModuleCreateInfo info;
-        info.codeSize = code.size() * sizeof(char);
-        info.pCode = reinterpret_cast<const u32*>(code.data());
-        return vk::raii::ShaderModule(device, info); 
-
-    }
+ 
 
     auto createCommandPool() -> void {
         vk::CommandPoolCreateInfo poolInfo;
@@ -1263,4 +1265,112 @@ export class VulkanRenderer{
     Logger logger;
     Window* window; 
 
+};
+
+export class PipelineBuilder {
+    public:
+        PipelineBuilder(VulkanRenderer& renderer_) :
+        renderer(renderer_) {
+            dynamicState.setDynamicStateCount(static_cast<u32>(dynamicStates.size()))
+            .setPDynamicStates(dynamicStates.data());
+        };
+
+        PipelineBuilder& setShader(const std::string &shaderPath) 
+        {
+            shader = renderer.createShaderModule(readFile(shaderPath));
+        };
+        PipelineBuilder& setShaderInfo(vk::ShaderStageFlagBits stage, const std::string &name)
+        {
+            if (shader == nullptr) {
+                logger.log(LogLevel::WARNING, "Attempting to set a shader stage to a null shader module!");
+                return *this;
+            }
+            vk::PipelineShaderStageCreateInfo shaderInfo;
+            shaderInfo.setStage(stage)
+            .setModule(shader)
+            .setPName(name.c_str());
+
+            shaderStages.emplace_back(
+                    shaderInfo
+            );
+
+        } 
+        PipelineBuilder& setVertexInputInfo(const vk::VertexInputBindingDescription& bindingDescription,
+                                            const std::vector<vk::VertexInputAttributeDescription>& attributeDescriptions)
+        { 
+            vertexInfo.setVertexBindingDescriptionCount(1)
+            .setPVertexBindingDescriptions(&bindingDescription)
+            .setVertexAttributeDescriptionCount(attributeDescriptions.size())
+            .setPVertexAttributeDescriptions(attributeDescriptions.data());
+
+        }
+
+        PipelineBuilder& setInputAssembly(vk::PrimitiveTopology topology) { inputAssemblyInfo.setTopology(topology); }
+
+        PipelineBuilder& setDepthTest(vk::Bool32 state) {
+            depthSetncil.setDepthTestEnable(state)
+            // Depth writes are disabled whenever depth testing is disabled
+            .setDepthWriteEnable(vk::True)
+            .setDepthCompareOp(vk::CompareOp::eLess)
+            .setDepthBoundsTestEnable(vk::False);
+        }
+        PipelineBuilder& setStencilTest(vk::Bool32 state) {depthSetncil.setStencilTestEnable(state);}
+        PipelineBuilder& setViewportState(u32 viewportCount, u32 scissorCount)
+        {
+            viewportInfo.setScissorCount(scissorCount)
+            .setViewportCount(viewportCount);
+        }
+        PipelineBuilder& setDepthClampEnable(vk::Bool32 state) {rasterizer.setDepthClampEnable(state);}
+        PipelineBuilder& setDiscardEnable   (vk::Bool32 state) {rasterizer.setRasterizerDiscardEnable(state);}
+        PipelineBuilder& setPolygonMode     (vk::PolygonMode mode) {rasterizer.setPolygonMode(mode);}
+        PipelineBuilder& setCullMode        (vk::CullModeFlagBits mode) {rasterizer.setCullMode(mode);}
+        PipelineBuilder& setFrontFace       (vk::FrontFace face) {rasterizer.setFrontFace(face); }
+        PipelineBuilder& setDepthBiasEnable (vk::Bool32 mode) {rasterizer.setDepthBiasEnable(mode); }
+        PipelineBuilder& setLineWidth       (f32 width) {rasterizer.setLineWidth(width); }
+
+        PipelineBuilder& setMultisampleSamples(vk::SampleCountFlagBits flags) {multisampling.setRasterizationSamples(flags); }
+        PipelineBuilder& setMultisampleShading(vk::Bool32 enable) {multisampling.setSampleShadingEnable(enable); }
+
+        PipelineBuilder& setPipelineSetLayouts(std::vector<vk::DescriptorSetLayout> handles) {pipelineLayoutInfo.setSetLayouts(handles); }
+
+        PipelineBuilder& setRenderingColorAttachmentCount(u32 count) {pipelineRenderingInfo.setColorAttachmentCount(count); }
+        PipelineBuilder& setColorAttachmentFormats(const vk::Format &format) {pipelineRenderingInfo.setPColorAttachmentFormats(&format); }
+        PipelineBuilder& setDepthAttachmentFormat(const vk::Format format) {pipelineRenderingInfo.setDepthAttachmentFormat(format); }
+        vk::raii::Pipeline build() {
+            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain;
+
+
+            vk::raii::PipelineLayout layout = vk::raii::PipelineLayout(renderer.getCurrentDevice(), pipelineLayoutInfo);
+            pipelineCreateInfoChain.get().setStageCount(shaderStages.size())
+            .setPStages(shaderStages.data())
+            .setPVertexInputState(&vertexInfo)
+            .setPInputAssemblyState(&inputAssemblyInfo)
+            .setPDepthStencilState(&depthSetncil)
+            .setPViewportState(&viewportInfo)
+            .setPRasterizationState(&rasterizer)
+            .setPMultisampleState(&multisampling)
+            .setPDynamicState(&dynamicState)
+            .setLayout(layout)
+            .setRenderPass(nullptr);
+            pipelineCreateInfoChain.assign(pipelineRenderingInfo);
+
+            return vk::raii::Pipeline( renderer.getCurrentDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+        };
+
+    private:
+       VulkanRenderer& renderer;
+       Logger logger;
+       vk::raii::ShaderModule shader = nullptr;
+       std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+       std::vector<vk::DynamicState>    dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+       vk::PipelineDynamicStateCreateInfo dynamicState;
+       vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo;
+       vk::PipelineVertexInputStateCreateInfo vertexInfo;
+       vk::PipelineRasterizationStateCreateInfo rasterizer;
+       vk::PipelineDepthStencilStateCreateInfo depthSetncil;
+       vk::PipelineMultisampleStateCreateInfo multisampling;
+       vk::PipelineViewportStateCreateInfo viewportInfo;
+       vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
+        vk::PipelineRenderingCreateInfo pipelineRenderingInfo;
 };

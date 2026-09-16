@@ -40,5 +40,5 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-    return float4(1.0, 1.0, 1.0, 1.0);
+    return float4(1.0, 1.0, 1.0, 0.1);
 }
