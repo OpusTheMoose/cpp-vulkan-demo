@@ -3,7 +3,9 @@ module;
 
 #include <cstddef>
 #include <glm/ext/matrix_transform.hpp>
+#include <tuple>
 #include <unordered_map>
+#include <utility>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -78,10 +80,7 @@ export enum DescriptorSetType {
 
 static_assert(sizeof(InstanceData) == 112);
 
-struct Pipeline {
-    vk::raii::Pipeline pipeline = nullptr;
-    vk::raii::PipelineLayout layout = nullptr;
-};
+
 
 export enum class PipelineType {
     Mesh,
@@ -102,7 +101,7 @@ export struct Descriptors {
 
 
 export struct DrawSubmission {
-    PipelineType type;
+    std::pair<vk::raii::Pipeline, vk::raii::PipelineLayout> &pipelineInfo; 
     Buffer const& vertexBuffer;
     Buffer const& indexBuffer;
 
@@ -219,6 +218,11 @@ export class VulkanRenderer{
         return instanceBuffer;
     }
 
+    auto getSwapSurfaceFormat()
+    {
+        return swapChainSurfaceFormat;
+    }
+
     
         
 
@@ -316,44 +320,7 @@ export class VulkanRenderer{
         
     }
 
-    // Creates all the graphics pieplines
-    auto createGraphicsPipelines(std::span<const vk::raii::DescriptorSetLayout> layouts) -> void {
-
-
-        std::vector<vk::DescriptorSetLayout> layoutHandles;
-        layoutHandles.reserve(layouts.size());
-
-        for (const auto& layout : layouts) {
-        layoutHandles.push_back(*layout);
-        }
     
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-        pipelineLayoutInfo.setSetLayouts(layoutHandles);
-
-        vk::raii::PipelineLayout pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
-
-
-        vk::PushConstantRange gridPushConstant;
-        gridPushConstant.setStageFlags(vk::ShaderStageFlagBits::eVertex)
-        .setOffset(0)
-        .setSize(sizeof(glm::mat4));
-
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo2;
-        pipelineLayoutInfo2.setSetLayoutCount(1)
-        .setSetLayouts(layoutHandles)
-        .setPushConstantRangeCount(1)
-        .setPPushConstantRanges(&gridPushConstant);
-
-
-        vk::raii::PipelineLayout pipelineLayout2 = vk::raii::PipelineLayout(device, pipelineLayoutInfo2);
-
-
-        pipelines[PipelineType::Mesh] = Pipeline{ createGraphicsPipeline("src/shaders/instance.spv", pipelineLayout), std::move(pipelineLayout) };
-        pipelines[PipelineType::Grid] = Pipeline{ createGraphicsPipeline("src/shaders/grid_floor.spv", pipelineLayout2), std::move(pipelineLayout2) };
-
-
-
-    }
         
         auto drawFrame(Camera camera, std::span<DrawSubmission> const& drawCalls) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
@@ -549,35 +516,29 @@ export class VulkanRenderer{
 
         for (auto const& draw : drawCalls)
         {
-            switch (draw.type) {
-                case PipelineType::Mesh:
-                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].pipeline);
-                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Mesh].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
-                    break;
-                case PipelineType::Line:
-                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].pipeline);
-                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Line].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
-                    break;
-                case PipelineType::Grid:
-                    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].pipeline);
-                    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
-                    // Grid is a special type, so we're fine with just taking the first value in instance data. cause there PROBABLY WONT BE more than 1
-                    commandBuffer.pushConstants<glm::mat4>(*pipelines[PipelineType::Grid].layout, vk::ShaderStageFlagBits::eVertex, 0, draw.instanceData[0].model);
-                    break;
-            }
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelines[draw.type].layout, 0, *draw.descriptorSets.frameSets[frameIndex], nullptr);         
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelines[draw.type].layout, 2, *draw.descriptorSets.materialSets[frameIndex], nullptr);         
-        commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
-        commandBuffer.bindIndexBuffer(draw.indexBuffer.buffers[0], 0, vk::IndexType::eUint16);
-        commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
-           
+            
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.first);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.second, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.second, 0, *draw.descriptorSets.frameSets[frameIndex], nullptr);         
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.second, 2, *draw.descriptorSets.materialSets[frameIndex], nullptr);         
+                // case PipelineType::Grid:
+                //     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].pipeline);
+                //     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
+                //     // Grid is a special type, so we're fine with just taking the first value in instance data. cause there PROBABLY WONT BE more than 1
+                //     commandBuffer.pushConstants<glm::mat4>(*pipelines[PipelineType::Grid].layout, vk::ShaderStageFlagBits::eVertex, 0, draw.instanceData[0].model);
+                //     break;
+
+            commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
+            commandBuffer.bindIndexBuffer(draw.indexBuffer.buffers[0], 0, vk::IndexType::eUint16);
+            commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
+            
         }
         
 
         commandBuffer.endRendering();
 
         // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
-    transition_image_layout(
+        transition_image_layout(
     swapChainImages[imageIndex],
     vk::ImageLayout::eColorAttachmentOptimal,
     vk::ImageLayout::ePresentSrcKHR,
@@ -590,7 +551,7 @@ export class VulkanRenderer{
 
   
 
-    commandBuffer.end();
+        commandBuffer.end();
 
     }
     auto createInstance() -> void {
@@ -878,109 +839,6 @@ export class VulkanRenderer{
 
     }
 
-    
-    auto createGraphicsPipeline(const std::string &shaderPath, vk::PipelineLayout layout) -> vk::raii::Pipeline {
-        auto shaderModule = createShaderModule(readFile(shaderPath));
-        vk::PipelineShaderStageCreateInfo vertShaderStagInfo;
-        vertShaderStagInfo.stage = vk::ShaderStageFlagBits::eVertex;
-        vertShaderStagInfo.module = shaderModule;
-        vertShaderStagInfo.pName = "vertMain";
-
-        vk::PipelineShaderStageCreateInfo fragShaderStagInfo;
-        fragShaderStagInfo.stage = vk::ShaderStageFlagBits::eFragment;
-        fragShaderStagInfo.module = shaderModule;
-        fragShaderStagInfo.pName = "fragMain";
-
-        vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStagInfo, fragShaderStagInfo};
-
-        auto  bindingDescription    = Vertex::getBindingDescription();
-        auto  attributeDescriptions = Vertex::getAttributeDescriptions();
-
-        vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-        vertexInputInfo.setVertexBindingDescriptionCount(1)
-        .setPVertexBindingDescriptions(&bindingDescription)
-        .setVertexAttributeDescriptionCount(static_cast<u32>(attributeDescriptions.size()))
-        .setPVertexAttributeDescriptions(attributeDescriptions.data());
-
-
-        vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
-        inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-        vk::PipelineViewportStateCreateInfo viewportState;
-        viewportState.viewportCount = 1;
-        viewportState.scissorCount = 1;
-
-        std::vector<vk::DynamicState>      dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
-		vk::PipelineDynamicStateCreateInfo dynamicState;
-        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-        dynamicState.pDynamicStates = dynamicStates.data(); 
-
-        vk::PipelineRasterizationStateCreateInfo rasterizer;
-        rasterizer.depthClampEnable        = vk::False;
-        rasterizer.rasterizerDiscardEnable = vk::False;
-        rasterizer.polygonMode             = vk::PolygonMode::eFill;
-        rasterizer.cullMode                = vk::CullModeFlagBits::eBack;
-        rasterizer.frontFace               = vk::FrontFace::eCounterClockwise;
-        rasterizer.depthBiasEnable         = vk::False;
-        rasterizer.lineWidth               = 1.0f;
-
-        vk::PipelineDepthStencilStateCreateInfo depthStencil = {};
-        depthStencil.setDepthTestEnable(vk::True)
-        .setDepthWriteEnable(vk::True)
-        .setDepthCompareOp(vk::CompareOp::eLess)
-        .setDepthBoundsTestEnable(vk::False)
-        .setStencilTestEnable(vk::False);
-
-        vk::PipelineMultisampleStateCreateInfo multisampling;
-        multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-        multisampling.sampleShadingEnable = vk::False;
-
-        vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-        colorBlendAttachment.blendEnable = vk::False;
-        colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-
-        vk::PipelineColorBlendStateCreateInfo colorBlending;
-        colorBlending.logicOpEnable = vk::False;
-        colorBlending.logicOp = vk::LogicOp::eCopy;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
-
-        vk::PushConstantRange pushConstantRange = {};
-        pushConstantRange.setStageFlags(vk::ShaderStageFlagBits::eVertex)
-        .setOffset(0)
-        .setSize(sizeof(glm::mat4));
-
-
-        vk::PipelineRenderingCreateInfo pipelineRenderingInfo = {};
-        pipelineRenderingInfo.setColorAttachmentCount(1)
-        .setPColorAttachmentFormats(&swapChainSurfaceFormat.format)
-        .setDepthAttachmentFormat(vk::Format::eD32Sfloat);
-
-        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain;
-        pipelineCreateInfoChain.get().setStageCount(2)
-        .setPStages(shaderStages)
-        .setPVertexInputState(&vertexInputInfo)
-        .setPInputAssemblyState(&inputAssembly)
-        .setPDepthStencilState(&depthStencil)
-        .setPViewportState(&viewportState)
-        .setPRasterizationState(&rasterizer)
-        .setPMultisampleState(&multisampling)
-        .setPColorBlendState(&colorBlending)
-        .setPDynamicState(&dynamicState)
-        .setLayout(layout)
-        .setRenderPass(nullptr);
-        pipelineCreateInfoChain.assign(pipelineRenderingInfo);
-
-        vk::raii::Pipeline pipeline = vk::raii::Pipeline(device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-
-
-        logger.log(LogLevel::INFO, "Graphics pipeline created");
-        return  pipeline;
-    }
-
-    
-
- 
-
     auto createCommandPool() -> void {
         vk::CommandPoolCreateInfo poolInfo;
         poolInfo.flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
@@ -1234,9 +1092,6 @@ export class VulkanRenderer{
     vk::raii::Device device = nullptr;
     
 
-    std::unordered_map<PipelineType, Pipeline>  pipelines;
-
-
     vk::raii::CommandPool  commandPool = nullptr; 
 
     vk::raii::Image depthImage = nullptr;
@@ -1277,7 +1132,13 @@ export class PipelineBuilder {
 
         PipelineBuilder& setShader(const std::string &shaderPath) 
         {
+            if (shaderPath.find(".spv") == std::string::npos)
+            {
+                logger.log(LogLevel::WARNING, "You forgot to use the .spv compiled binary!");
+                return *this;
+            }
             shader = renderer.createShaderModule(readFile(shaderPath));
+            return *this;
         };
         PipelineBuilder& setShaderInfo(vk::ShaderStageFlagBits stage, const std::string &name)
         {
@@ -1293,19 +1154,21 @@ export class PipelineBuilder {
             shaderStages.emplace_back(
                     shaderInfo
             );
+            return *this;
 
         } 
         PipelineBuilder& setVertexInputInfo(const vk::VertexInputBindingDescription& bindingDescription,
-                                            const std::vector<vk::VertexInputAttributeDescription>& attributeDescriptions)
+                                            std::span<const vk::VertexInputAttributeDescription> attributeDescriptions)
         { 
             vertexInfo.setVertexBindingDescriptionCount(1)
             .setPVertexBindingDescriptions(&bindingDescription)
             .setVertexAttributeDescriptionCount(attributeDescriptions.size())
             .setPVertexAttributeDescriptions(attributeDescriptions.data());
+            return *this;
 
         }
 
-        PipelineBuilder& setInputAssembly(vk::PrimitiveTopology topology) { inputAssemblyInfo.setTopology(topology); }
+        PipelineBuilder& setInputAssembly(vk::PrimitiveTopology topology) { inputAssemblyInfo.setTopology(topology); return *this; }
 
         PipelineBuilder& setDepthTest(vk::Bool32 state) {
             depthSetncil.setDepthTestEnable(state)
@@ -1313,30 +1176,46 @@ export class PipelineBuilder {
             .setDepthWriteEnable(vk::True)
             .setDepthCompareOp(vk::CompareOp::eLess)
             .setDepthBoundsTestEnable(vk::False);
+            return *this;
         }
-        PipelineBuilder& setStencilTest(vk::Bool32 state) {depthSetncil.setStencilTestEnable(state);}
+        PipelineBuilder& setStencilTest(vk::Bool32 state) {depthSetncil.setStencilTestEnable(state); return *this;}
         PipelineBuilder& setViewportState(u32 viewportCount, u32 scissorCount)
         {
             viewportInfo.setScissorCount(scissorCount)
             .setViewportCount(viewportCount);
+            return *this;
         }
-        PipelineBuilder& setDepthClampEnable(vk::Bool32 state) {rasterizer.setDepthClampEnable(state);}
-        PipelineBuilder& setDiscardEnable   (vk::Bool32 state) {rasterizer.setRasterizerDiscardEnable(state);}
-        PipelineBuilder& setPolygonMode     (vk::PolygonMode mode) {rasterizer.setPolygonMode(mode);}
-        PipelineBuilder& setCullMode        (vk::CullModeFlagBits mode) {rasterizer.setCullMode(mode);}
-        PipelineBuilder& setFrontFace       (vk::FrontFace face) {rasterizer.setFrontFace(face); }
-        PipelineBuilder& setDepthBiasEnable (vk::Bool32 mode) {rasterizer.setDepthBiasEnable(mode); }
-        PipelineBuilder& setLineWidth       (f32 width) {rasterizer.setLineWidth(width); }
+        PipelineBuilder& setColorBlendAttachment(vk::Bool32 blendEnable, vk::ColorComponentFlags colorWriteMask) {
+            colorBlendAttachment.setBlendEnable(blendEnable)
+            .setColorWriteMask(colorWriteMask);
+            return *this;
+        }
+        // Only use this AFTER setting the blend attachment
+        PipelineBuilder& setColorBlendState() {
+            colorBlending.setAttachmentCount(1)
+            .setLogicOpEnable(vk::False)
+            .setLogicOp(vk::LogicOp::eCopy)
+            .setPAttachments(&colorBlendAttachment);
+            return *this;
 
-        PipelineBuilder& setMultisampleSamples(vk::SampleCountFlagBits flags) {multisampling.setRasterizationSamples(flags); }
-        PipelineBuilder& setMultisampleShading(vk::Bool32 enable) {multisampling.setSampleShadingEnable(enable); }
+        }
+        PipelineBuilder& setDepthClampEnable(vk::Bool32 state) {rasterizer.setDepthClampEnable(state); return *this; }
+        PipelineBuilder& setDiscardEnable   (vk::Bool32 state) {rasterizer.setRasterizerDiscardEnable(state); return *this;}
+        PipelineBuilder& setPolygonMode     (vk::PolygonMode mode) {rasterizer.setPolygonMode(mode); return *this;}
+        PipelineBuilder& setCullMode        (vk::CullModeFlagBits mode) {rasterizer.setCullMode(mode); return *this;}
+        PipelineBuilder& setFrontFace       (vk::FrontFace face) {rasterizer.setFrontFace(face); return *this;}
+        PipelineBuilder& setDepthBiasEnable (vk::Bool32 mode) {rasterizer.setDepthBiasEnable(mode); return *this; }
+        PipelineBuilder& setLineWidth       (f32 width) {rasterizer.setLineWidth(width); return *this; }
 
-        PipelineBuilder& setPipelineSetLayouts(std::vector<vk::DescriptorSetLayout> handles) {pipelineLayoutInfo.setSetLayouts(handles); }
+        PipelineBuilder& setMultisampleSamples(vk::SampleCountFlagBits flags) {multisampling.setRasterizationSamples(flags); return *this; }
+        PipelineBuilder& setMultisampleShading(vk::Bool32 enable) {multisampling.setSampleShadingEnable(enable); return *this; }
 
-        PipelineBuilder& setRenderingColorAttachmentCount(u32 count) {pipelineRenderingInfo.setColorAttachmentCount(count); }
-        PipelineBuilder& setColorAttachmentFormats(const vk::Format &format) {pipelineRenderingInfo.setPColorAttachmentFormats(&format); }
-        PipelineBuilder& setDepthAttachmentFormat(const vk::Format format) {pipelineRenderingInfo.setDepthAttachmentFormat(format); }
-        vk::raii::Pipeline build() {
+        PipelineBuilder& setPipelineSetLayouts(std::span<const vk::DescriptorSetLayout> handles) {pipelineLayoutInfo.setSetLayouts(handles); return *this; }
+
+        PipelineBuilder& setRenderingColorAttachmentCount(u32 count) {pipelineRenderingInfo.setColorAttachmentCount(count); return *this; }
+        PipelineBuilder& setColorAttachmentFormats(const vk::Format &format) {pipelineRenderingInfo.setPColorAttachmentFormats(&format); return *this; }
+        PipelineBuilder& setDepthAttachmentFormat(const vk::Format format) {pipelineRenderingInfo.setDepthAttachmentFormat(format); return *this; }
+       auto build() -> std::tuple<vk::raii::Pipeline, vk::raii::PipelineLayout> {
             vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain;
 
 
@@ -1350,11 +1229,15 @@ export class PipelineBuilder {
             .setPRasterizationState(&rasterizer)
             .setPMultisampleState(&multisampling)
             .setPDynamicState(&dynamicState)
+            .setPColorBlendState(&colorBlending)
             .setLayout(layout)
             .setRenderPass(nullptr);
             pipelineCreateInfoChain.assign(pipelineRenderingInfo);
 
-            return vk::raii::Pipeline( renderer.getCurrentDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+            vk::raii::Pipeline new_pipeline = vk::raii::Pipeline( renderer.getCurrentDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+            return std::make_tuple
+            (std::move(new_pipeline), std::move(layout));
 
         };
 
@@ -1372,5 +1255,7 @@ export class PipelineBuilder {
        vk::PipelineMultisampleStateCreateInfo multisampling;
        vk::PipelineViewportStateCreateInfo viewportInfo;
        vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-        vk::PipelineRenderingCreateInfo pipelineRenderingInfo;
+       vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+       vk::PipelineColorBlendStateCreateInfo colorBlending;
+       vk::PipelineRenderingCreateInfo pipelineRenderingInfo;
 };

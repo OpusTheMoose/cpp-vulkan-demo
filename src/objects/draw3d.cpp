@@ -31,9 +31,7 @@ export enum PrimitiveType {
 
 export class Draw3D {
     public:
-        Draw3D() = default;
-        Draw3D(VulkanRenderer &renderer) {
-            this->renderer = &renderer;
+        Draw3D(VulkanRenderer &renderer_) : renderer(renderer_), pipelineBuilder(renderer) {
 
             for (auto &e : instanceBuffers)
             {
@@ -64,8 +62,47 @@ export class Draw3D {
                 renderer.updateDescriptorSet( FRAME, descriptorSets.frameSets[frame], uniformBuffer, frame);
                 renderer.updateDescriptorSet( MATERIAL, descriptorSets.materialSets[frame], lightBuffer, frame);
                 renderer.updateDescriptorSet( OBJECT,   descriptorSets.instanceSets[frame],    instanceBuffers[PrimitiveType::SPHERE], frame);  
-            }   
-            renderer.createGraphicsPipelines(descriptorSets.layouts);
+            }
+            const std::array<vk::DescriptorSetLayout, 4> pipelineSetLayouts {
+                *this->descriptorSets.layouts[0],
+                *this->descriptorSets.layouts[1],
+                *this->descriptorSets.layouts[2],
+                *this->descriptorSets.layouts[3]
+            };
+            
+            TEMP_PIPELINE = pipelineBuilder
+            .setColorAttachmentFormats(renderer.getSwapSurfaceFormat().format)
+            .setRenderingColorAttachmentCount(1)
+            .setColorBlendAttachment(false, vk::ColorComponentFlagBits::eR | 
+                                           vk::ColorComponentFlagBits::eG |
+                                           vk::ColorComponentFlagBits::eB |
+                                           vk::ColorComponentFlagBits::eA
+                                        
+                                        )
+            .setColorBlendState()
+            //Depth
+            .setDepthAttachmentFormat(vk::Format::eD32Sfloat)
+            .setDepthClampEnable(vk::False)
+            .setDepthTest(vk::True)
+            .setStencilTest(vk::False)
+            // Reasterizer
+            .setDepthBiasEnable(vk::False)
+            .setCullMode(vk::CullModeFlagBits::eBack)
+            .setPolygonMode(vk::PolygonMode::eFill)
+            .setFrontFace(vk::FrontFace::eCounterClockwise)
+            .setLineWidth(1.0f)
+            .setDiscardEnable(vk::False)
+            // Input Assembly
+            .setInputAssembly(vk::PrimitiveTopology::eTriangleList)
+            .setShader("src/shaders/instance.spv")
+            .setShaderInfo(vk::ShaderStageFlagBits::eVertex, "vertMain")
+            .setShaderInfo(vk::ShaderStageFlagBits::eFragment, "fragMain")
+            .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
+            .setViewportState(1, 1)
+            .setMultisampleSamples(vk::SampleCountFlagBits::e1) 
+            .setMultisampleShading(false)
+            .setPipelineSetLayouts(pipelineSetLayouts)
+            .build();
         
             generateSphereData();
             generateQuadData();
@@ -89,7 +126,7 @@ export class Draw3D {
         std::vector<DrawSubmission> drawCalls;
        
         drawCalls.emplace_back(
-            PipelineType::Mesh,
+            TEMP_PIPELINE,
             sphere.vertexBuffer,
             sphere.indexBuffer,
             uniformBuffer,
@@ -102,26 +139,8 @@ export class Draw3D {
             static_cast<u32>(sphereInstanceData.size())
         );
 
-        // Draw the grid specifically 
-         Mesh& quad = meshes[PrimitiveType::QUAD];
-
-
-        drawCalls.emplace_back(
-            PipelineType::Grid,
-            quad.vertexBuffer,
-            quad.indexBuffer,
-            uniformBuffer,
-            instanceBuffers[PrimitiveType::QUAD],
-            lightBuffer,
-
-            quadInstanceData,
-            lights,
-            descriptorSets,
-            static_cast<u32>(quad.getIndices().size()),
-            static_cast<u32>(quadInstanceData.size())
-        );
-
-        renderer->drawFrame(camera, drawCalls);
+    
+        renderer.drawFrame(camera, drawCalls);
         
        }
 
@@ -236,8 +255,8 @@ export class Draw3D {
         meshes[PrimitiveType::SPHERE] = Mesh(sphereVertices, sphereIndices);
 
         Mesh &sphere = meshes[PrimitiveType::SPHERE];
-        sphere.vertexBuffer = renderer->createVertexBuffer(sphere.getVertices().data(), sphere.getVertices().size() * sizeof(Vertex));
-        sphere.indexBuffer = renderer->createIndexBuffer(sphere.getIndices().data(), sphere.getIndices().size() * sizeof(u16));
+        sphere.vertexBuffer = renderer.createVertexBuffer(sphere.getVertices().data(), sphere.getVertices().size() * sizeof(Vertex));
+        sphere.indexBuffer = renderer.createIndexBuffer(sphere.getIndices().data(), sphere.getIndices().size() * sizeof(u16));
 
     }
     
@@ -258,8 +277,8 @@ export class Draw3D {
         };
         meshes[PrimitiveType::QUAD] = Mesh(quad, indices);
         Mesh &quadMesh = meshes[PrimitiveType::QUAD];
-        quadMesh.vertexBuffer = renderer->createVertexBuffer(quadMesh.getVertices().data(), quadMesh.getVertices().size() * sizeof(Vertex));
-        quadMesh.indexBuffer = renderer->createIndexBuffer(quadMesh.getIndices().data(), quadMesh.getIndices().size() * sizeof(u16));
+        quadMesh.vertexBuffer = renderer.createVertexBuffer(quadMesh.getVertices().data(), quadMesh.getVertices().size() * sizeof(Vertex));
+        quadMesh.indexBuffer = renderer.createIndexBuffer(quadMesh.getIndices().data(), quadMesh.getIndices().size() * sizeof(u16));
 
 
 
@@ -285,8 +304,10 @@ export class Draw3D {
 
 
 
-    VulkanRenderer *renderer;
+    VulkanRenderer& renderer;
     Descriptors descriptorSets;
+    PipelineBuilder pipelineBuilder;
+    std::pair<vk::raii::Pipeline, vk::raii::PipelineLayout> TEMP_PIPELINE = {nullptr, nullptr};
 
     std::array<Mesh, static_cast<int>(PrimitiveType::QUAD) + 1> meshes;
     

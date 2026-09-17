@@ -22,7 +22,7 @@ export class Application {
     public:
         Application() : window(800, 600, "Game"), 
                         event_manager(&window),
-                        renderer(window)
+                        renderer(window), draw(renderer)
             {
            camera_controller.registerCamera(
             Camera(glm::vec3(2.0f, 2.0f, 2.0f), 
@@ -30,8 +30,6 @@ export class Application {
             glm::vec2(800.0, 600.0), 
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
-
-            draw = draw::Draw3D(renderer);
             }
   
 
