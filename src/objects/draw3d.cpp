@@ -2,6 +2,7 @@ module;
 #include "vulkan/vulkan.hpp"
 #include <array>
 #include <glm/fwd.hpp>
+#include <variant>
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -113,6 +114,7 @@ export class Draw3D {
             .setShader("src/shaders/grid_floor.spv",
                vk::ShaderStageFlagBits::eFragment,
                "fragMain")
+            .setPushConstant(vk::ShaderStageFlagBits::eVertex, sizeof(glm::mat4))
             .build();
         
             generateSphereData();
@@ -146,6 +148,7 @@ export class Draw3D {
             sphereInstanceData,
             lights,
             descriptorSets,
+            std::monostate(),
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
         );
@@ -161,6 +164,7 @@ export class Draw3D {
             quadInstanceData,
             lights,
             descriptorSets,
+            glm::identity<glm::mat4>(),
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())
         );

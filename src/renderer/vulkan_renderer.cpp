@@ -20,6 +20,7 @@ module;
 #include <stdexcept>
 #include <vector>
 #include <print>
+#include <variant>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -106,6 +107,7 @@ export struct GraphicsPipeline {
 };
 
 
+using PushConstant = std::variant<std::monostate, glm::mat4>;
 
 export struct DrawSubmission {
     GraphicsPipeline const &pipelineInfo; 
@@ -119,6 +121,8 @@ export struct DrawSubmission {
     std::span<const InstanceData> instanceData;
     std::span<const Light> lights;
     Descriptors const& descriptorSets;
+
+    PushConstant pushConstant;
 
     u32 indexCount, instanceCount;
 };
@@ -532,9 +536,17 @@ export class VulkanRenderer{
                 //     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].pipeline);
                 //     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
                 //     // Grid is a special type, so we're fine with just taking the first value in instance data. cause there PROBABLY WONT BE more than 1
-                //     commandBuffer.pushConstants<glm::mat4>(*pipelines[PipelineType::Grid].layout, vk::ShaderStageFlagBits::eVertex, 0, draw.instanceData[0].model);
-                //     break;
 
+            // Deduce type of push constant, if there is one
+            std::visit([&](auto& arg)
+            {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (!std::is_same_v<T, std::monostate>)
+                {
+                    commandBuffer.pushConstants<T>(*draw.pipelineInfo.layout, vk::ShaderStageFlagBits::eVertex, 0, arg);
+                }
+            }, draw.pushConstant );
+        
             commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
             commandBuffer.bindIndexBuffer(draw.indexBuffer.buffers[0], 0, vk::IndexType::eUint16);
             commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
@@ -1145,6 +1157,7 @@ export struct PipelineConfig {
 
     std::vector<vk::VertexInputBindingDescription> vertexBindings;
     std::vector<vk::VertexInputAttributeDescription> vertexAttributes;
+    std::vector<vk::PushConstantRange> pushConstantRanges;
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
 
     vk::PipelineRenderingCreateInfo pipelineRenderingInfo;
@@ -1256,8 +1269,16 @@ export class PipelineBuilder {
             pipelineConfig.colorAttachmentFormats.assign(colorFormats.begin(), colorFormats.end());
             pipelineConfig.pipelineRenderingInfo.setPColorAttachmentFormats(pipelineConfig.colorAttachmentFormats.data()); 
             return *this; 
-        
-        
+        }
+        PipelineBuilder& setPushConstant(vk::ShaderStageFlagBits stageFlags, u32 size)
+        {
+            vk::PushConstantRange range = {};
+            range.setStageFlags(stageFlags)
+            .setOffset(0)
+            .setSize(size);
+            pipelineConfig.pushConstantRanges.emplace_back(range);
+         
+            return *this;
         }
         PipelineBuilder& setDepthAttachmentFormat(const vk::Format format) {pipelineConfig.pipelineRenderingInfo.setDepthAttachmentFormat(format); return *this; }
         auto rebindPointers() -> void {
@@ -1286,6 +1307,12 @@ export class PipelineBuilder {
             static_cast<u32>(pipelineConfig.colorAttachmentFormats.size()))
                 .setPColorAttachmentFormats(
             pipelineConfig.colorAttachmentFormats.data());
+
+            pipelineConfig.pipelineLayoutInfo
+            .setPushConstantRangeCount(static_cast<u32>(pipelineConfig.pushConstantRanges.size()))
+            .setPushConstantRanges(pipelineConfig.pushConstantRanges);
+
+            
         }
        auto build() -> GraphicsPipeline {
             rebindPointers();
@@ -1310,6 +1337,9 @@ export class PipelineBuilder {
 
                 stages.emplace_back(stageInfo);
             }
+            std::println(
+        "push ranges: {}",
+            pipelineConfig.pipelineLayoutInfo.pushConstantRangeCount);
             vk::raii::PipelineLayout layout = vk::raii::PipelineLayout(renderer.getCurrentDevice(), pipelineConfig.pipelineLayoutInfo);
             pipelineCreateInfoChain.get().setStageCount(pipelineConfig.shaderStages.size())
             .setPInputAssemblyState(&pipelineConfig.inputAssemblyInfo)
