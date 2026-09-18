@@ -71,7 +71,7 @@ export class Draw3D {
             };
             
             TEMP_PIPELINE = pipelineBuilder
-            .setColorAttachmentFormats(renderer.getSwapSurfaceFormat().format)
+            .setColorAttachmentFormats(std::array{renderer.getSwapSurfaceFormat().format})
             .setRenderingColorAttachmentCount(1)
             .setColorBlendAttachment(false, vk::ColorComponentFlagBits::eR | 
                                            vk::ColorComponentFlagBits::eG |
@@ -103,6 +103,12 @@ export class Draw3D {
             .setMultisampleShading(false)
             .setPipelineSetLayouts(pipelineSetLayouts)
             .build();
+
+            // gridFloor = pipelineBuilder.createFromExistingPipeline(TEMP_PIPELINE)
+            // .setShader("src/shaders/grid_floor.spv")
+            // .setShaderInfo(vk::ShaderStageFlagBits::eVertex, "vertMain")
+            // .setShaderInfo(vk::ShaderStageFlagBits::eFragment, "fragMain")
+            // .build();
         
             generateSphereData();
             generateQuadData();
@@ -126,7 +132,7 @@ export class Draw3D {
         std::vector<DrawSubmission> drawCalls;
        
         drawCalls.emplace_back(
-            TEMP_PIPELINE,
+            TEMP_PIPELINE.pipeline,
             sphere.vertexBuffer,
             sphere.indexBuffer,
             uniformBuffer,
@@ -138,6 +144,21 @@ export class Draw3D {
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
         );
+
+        // Mesh& quad = meshes[PrimitiveType::QUAD];
+        //  drawCalls.emplace_back(
+        //     gridFloor.pipeline,
+        //     quad.vertexBuffer,
+        //     quad.indexBuffer,
+        //     uniformBuffer,
+        //     instanceBuffers[PrimitiveType::QUAD],
+        //     lightBuffer,
+        //     quadInstanceData,
+        //     lights,
+        //     descriptorSets,
+        //     static_cast<u32>(quad.getIndices().size()),
+        //     static_cast<u32>(quadInstanceData.size())
+        // );
 
     
         renderer.drawFrame(camera, drawCalls);
@@ -307,7 +328,8 @@ export class Draw3D {
     VulkanRenderer& renderer;
     Descriptors descriptorSets;
     PipelineBuilder pipelineBuilder;
-    std::pair<vk::raii::Pipeline, vk::raii::PipelineLayout> TEMP_PIPELINE = {nullptr, nullptr};
+    GraphicsPipeline TEMP_PIPELINE;
+    GraphicsPipeline gridFloor;
 
     std::array<Mesh, static_cast<int>(PrimitiveType::QUAD) + 1> meshes;
     
