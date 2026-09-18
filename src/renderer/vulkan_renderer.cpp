@@ -1250,6 +1250,7 @@ export class PipelineBuilder {
 
         PipelineBuilder& setPipelineSetLayouts(std::span<const vk::DescriptorSetLayout> handles) {pipelineConfig.pipelineLayoutInfo.setSetLayouts(handles); return *this; }
 
+        PipelineBuilder& clearShaders() {pipelineConfig.shaderStages.clear(); return *this;};
         PipelineBuilder& setRenderingColorAttachmentCount(u32 count) {pipelineConfig.pipelineRenderingInfo.setColorAttachmentCount(count); return *this; }
         PipelineBuilder& setColorAttachmentFormats(std::span<const vk::Format> colorFormats) {
             pipelineConfig.colorAttachmentFormats.assign(colorFormats.begin(), colorFormats.end());
@@ -1279,7 +1280,8 @@ export class PipelineBuilder {
                 pipelineConfig.colorBlending
                 .setPAttachments(&pipelineConfig.colorBlendAttachment);
 
-                pipelineConfig.renderingInfo
+
+                 pipelineConfig.pipelineRenderingInfo
                 .setColorAttachmentCount(
             static_cast<u32>(pipelineConfig.colorAttachmentFormats.size()))
                 .setPColorAttachmentFormats(
@@ -1329,26 +1331,11 @@ export class PipelineBuilder {
             }
 
 
-        //  auto createFromExistingPipeline(const PipelineConfig& pipelineToCopy) -> PipelineBuilder& {
-        //     pipeline.dynamicState = pipelineToCopy.dynamicState;
-
-        //     pipeline.dynamicState.setPDynamicStates(pipeline.dynamicStates.data());
-
-        //     pipeline.inputAssemblyInfo = pipelineToCopy.inputAssemblyInfo;
-        //     pipeline.vertexInfo = pipelineToCopy.vertexInfo;
-        //     pipeline.rasterizer = pipelineToCopy.rasterizer;
-        //     pipeline.depthSetncil = pipelineToCopy.depthSetncil;
-        //     pipeline.multisampling = pipelineToCopy.multisampling;
-        //     pipeline.viewportInfo = pipelineToCopy.viewportInfo;
-        //     pipeline.pipelineLayoutInfo = pipelineToCopy.pipelineLayoutInfo;
-        //     pipeline.pipelineRenderingInfo.setPColorAttachmentFormats(pipeline.colorAttachmentFormats.data());
-        //     pipeline.colorBlendAttachment = pipelineToCopy.colorBlendAttachment;
-        //     // Set it so the pointer is pointing to the correct point
-        //     pipeline.colorBlending.setPAttachments(&pipeline.colorBlendAttachment);
-        //     pipeline.colorBlending = pipelineToCopy.colorBlending;
-        //     pipeline.pipelineRenderingInfo = pipelineToCopy.pipelineRenderingInfo;
-        //     return *this;
-        // }
+         auto createFromExistingPipeline(const PipelineBuilder& source) -> PipelineBuilder& {
+            pipelineConfig = source.pipelineConfig;
+            rebindPointers();
+            return *this;
+        }
 
     private:
        VulkanRenderer& renderer;

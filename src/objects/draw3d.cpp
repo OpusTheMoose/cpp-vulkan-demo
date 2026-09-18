@@ -103,11 +103,17 @@ export class Draw3D {
             .setPipelineSetLayouts(pipelineSetLayouts)
             .build();
 
-            // gridFloor = pipelineBuilder.createFromExistingPipeline(TEMP_PIPELINE)
-            // .setShader("src/shaders/grid_floor.spv")
-            // .setShaderInfo(vk::ShaderStageFlagBits::eVertex, "vertMain")
-            // .setShaderInfo(vk::ShaderStageFlagBits::eFragment, "fragMain")
-            // .build();
+            PipelineBuilder gridBuilder(renderer);
+            gridFloor = gridBuilder
+            .createFromExistingPipeline(pipelineBuilder)
+            .clearShaders()
+            .setShader("src/shaders/grid_floor.spv",
+               vk::ShaderStageFlagBits::eVertex,
+               "vertMain")
+            .setShader("src/shaders/grid_floor.spv",
+               vk::ShaderStageFlagBits::eFragment,
+               "fragMain")
+            .build();
         
             generateSphereData();
             generateQuadData();
@@ -144,20 +150,20 @@ export class Draw3D {
             static_cast<u32>(sphereInstanceData.size())
         );
 
-        // Mesh& quad = meshes[PrimitiveType::QUAD];
-        //  drawCalls.emplace_back(
-        //     gridFloor.pipeline,
-        //     quad.vertexBuffer,
-        //     quad.indexBuffer,
-        //     uniformBuffer,
-        //     instanceBuffers[PrimitiveType::QUAD],
-        //     lightBuffer,
-        //     quadInstanceData,
-        //     lights,
-        //     descriptorSets,
-        //     static_cast<u32>(quad.getIndices().size()),
-        //     static_cast<u32>(quadInstanceData.size())
-        // );
+        Mesh& quad = meshes[PrimitiveType::QUAD];
+         drawCalls.emplace_back(
+            gridFloor,
+            quad.vertexBuffer,
+            quad.indexBuffer,
+            uniformBuffer,
+            instanceBuffers[PrimitiveType::QUAD],
+            lightBuffer,
+            quadInstanceData,
+            lights,
+            descriptorSets,
+            static_cast<u32>(quad.getIndices().size()),
+            static_cast<u32>(quadInstanceData.size())
+        );
 
     
         renderer.drawFrame(camera, drawCalls);
