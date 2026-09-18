@@ -115,6 +115,16 @@ export class Draw3D {
                vk::ShaderStageFlagBits::eFragment,
                "fragMain")
             .setPushConstant(vk::ShaderStageFlagBits::eVertex, sizeof(glm::mat4))
+            .setCullMode(vk::CullModeFlagBits::eNone)
+            .setColorBlendAttachment(true, 
+                vk::ColorComponentFlagBits::eR |
+                vk::ColorComponentFlagBits::eG | 
+                vk::ColorComponentFlagBits::eB |
+                vk::ColorComponentFlagBits::eA)
+            .setColorBlendFactors(
+                vk::BlendFactor::eSrcAlpha,
+                vk::BlendFactor::eOneMinusSrcAlpha
+            )
             .build();
         
             generateSphereData();

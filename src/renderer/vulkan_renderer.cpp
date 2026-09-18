@@ -1250,6 +1250,24 @@ export class PipelineBuilder {
             return *this;
 
         }
+        PipelineBuilder& setColorBlendFactors(
+            vk::BlendFactor srcColor,
+            vk::BlendFactor dstColor,
+            vk::BlendOp colorOp = vk::BlendOp::eAdd,
+            vk::BlendFactor srcAlpha = vk::BlendFactor::eOne,
+            vk::BlendFactor dstAlpha = vk::BlendFactor::eZero,
+            vk::BlendOp alphaOp = vk::BlendOp::eAdd)
+        {
+            pipelineConfig.colorBlendAttachment
+            .setSrcColorBlendFactor(srcColor)
+            .setDstColorBlendFactor(dstColor)
+            .setColorBlendOp(colorOp)
+            .setSrcAlphaBlendFactor(srcAlpha)
+            .setDstAlphaBlendFactor(dstAlpha)
+            .setAlphaBlendOp(alphaOp);
+
+            return *this;
+        }       
         PipelineBuilder& setDepthClampEnable(vk::Bool32 state) {pipelineConfig.rasterizer.setDepthClampEnable(state); return *this; }
         PipelineBuilder& setDiscardEnable   (vk::Bool32 state) {pipelineConfig.rasterizer.setRasterizerDiscardEnable(state); return *this;}
         PipelineBuilder& setPolygonMode     (vk::PolygonMode mode) {pipelineConfig.rasterizer.setPolygonMode(mode); return *this;}
@@ -1337,9 +1355,7 @@ export class PipelineBuilder {
 
                 stages.emplace_back(stageInfo);
             }
-            std::println(
-        "push ranges: {}",
-            pipelineConfig.pipelineLayoutInfo.pushConstantRangeCount);
+           
             vk::raii::PipelineLayout layout = vk::raii::PipelineLayout(renderer.getCurrentDevice(), pipelineConfig.pipelineLayoutInfo);
             pipelineCreateInfoChain.get().setStageCount(pipelineConfig.shaderStages.size())
             .setPInputAssemblyState(&pipelineConfig.inputAssemblyInfo)
