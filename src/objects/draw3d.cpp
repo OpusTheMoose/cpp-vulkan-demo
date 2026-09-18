@@ -94,9 +94,8 @@ export class Draw3D {
             .setDiscardEnable(vk::False)
             // Input Assembly
             .setInputAssembly(vk::PrimitiveTopology::eTriangleList)
-            .setShader("src/shaders/instance.spv")
-            .setShaderInfo(vk::ShaderStageFlagBits::eVertex, "vertMain")
-            .setShaderInfo(vk::ShaderStageFlagBits::eFragment, "fragMain")
+            .setShader("src/shaders/instance.spv", vk::ShaderStageFlagBits::eVertex, "vertMain")
+            .setShader("src/shaders/instance.spv", vk::ShaderStageFlagBits::eFragment, "fragMain")
             .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
             .setViewportState(1, 1)
             .setMultisampleSamples(vk::SampleCountFlagBits::e1) 
@@ -132,7 +131,7 @@ export class Draw3D {
         std::vector<DrawSubmission> drawCalls;
        
         drawCalls.emplace_back(
-            TEMP_PIPELINE.pipeline,
+            TEMP_PIPELINE,
             sphere.vertexBuffer,
             sphere.indexBuffer,
             uniformBuffer,
