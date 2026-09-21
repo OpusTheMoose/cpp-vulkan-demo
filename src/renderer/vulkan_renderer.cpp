@@ -82,13 +82,6 @@ export enum DescriptorSetType {
 static_assert(sizeof(InstanceData) == 112);
 
 
-
-export enum class PipelineType {
-    Mesh,
-    Line,
-    Grid
-};
-
 export struct Descriptors {
     std::array<vk::raii::DescriptorSetLayout, 4> layouts = {
         nullptr, nullptr, nullptr, nullptr
@@ -127,6 +120,26 @@ export struct DrawSubmission {
     u32 indexCount, instanceCount;
 };
 
+export struct VulkanInfo {
+    vk::raii::Instance& g_instance;
+    vk::raii::PhysicalDevice g_physicalDevice;
+    vk::raii::Device& g_device;
+
+    vk::raii::Queue g_queue;
+    u32 g_queueFamily;
+
+    vk::raii::PipelineCache g_pipelineCache;
+    vk::raii::DescriptorPool& g_descriptorPool;
+    u32 g_minImageCount;
+    u32 g_ImageCount;
+
+    vk::raii::RenderPass g_renderPass;
+    vk::SampleCountFlagBits g_msaaSamples;
+
+    
+
+};
+
 
 export class VulkanRenderer{
     public:
@@ -140,6 +153,7 @@ export class VulkanRenderer{
                 createLogicalDevice();
                 createSwapChain();
                 createImageViews();
+                createColorResource();
                 createDepthResource(); 
                 createCommandPool(); 
                 createDescriptorPool(); 
@@ -166,6 +180,7 @@ export class VulkanRenderer{
 
             createSwapChain();
             createImageViews();
+            createColorResource();
             createDepthResource();
         }
 
@@ -470,6 +485,25 @@ export class VulkanRenderer{
 
     }
 
+    auto getRendererInfo() -> VulkanInfo {
+        return {
+            instance,
+            physicalDevice,
+            device,
+            graphicsQueue,
+            queueIndex,
+            nullptr,
+            descriptorPool,
+            minImageCount,
+            static_cast<u32>(swapChainImages.size()),
+            nullptr, 
+            vk::SampleCountFlagBits::e1
+
+            
+
+        };
+    }
+
     private:
 
     auto recordCommandBuffer(std::span<DrawSubmission> drawCalls, u32 imageIndex) -> void
@@ -496,11 +530,25 @@ export class VulkanRenderer{
         vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
         vk::ImageAspectFlagBits::eDepth);
 
+        transition_image_layout(
+        *colorImage,
+      vk::ImageLayout::eUndefined,
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::AccessFlagBits2::eColorAttachmentWrite,
+      vk::AccessFlagBits2::eColorAttachmentWrite,
+      vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+      vk::ImageAspectFlagBits::eColor);
+
         vk::ClearValue  clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
         vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
        vk::RenderingAttachmentInfo attachmentInfo = {};
-       attachmentInfo.setImageView(swapChainImageViews[imageIndex])
+       attachmentInfo.
+       setImageView(colorImageView)
        .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
+       .setResolveMode(vk::ResolveModeFlagBits::eAverage)
+       .setResolveImageView(swapChainImageViews[imageIndex])
+       .setResolveImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
        .setLoadOp(vk::AttachmentLoadOp::eClear)
        .setStoreOp(vk::AttachmentStoreOp::eStore)
        .setClearValue(clearColor);
@@ -532,10 +580,7 @@ export class VulkanRenderer{
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 0, *draw.descriptorSets.frameSets[frameIndex], nullptr);         
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 2, *draw.descriptorSets.materialSets[frameIndex], nullptr);         
-                // case PipelineType::Grid:
-                //     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].pipeline);
-                //     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelines[PipelineType::Grid].layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
-                //     // Grid is a special type, so we're fine with just taking the first value in instance data. cause there PROBABLY WONT BE more than 1
+               
 
             // Deduce type of push constant, if there is one
             std::visit([&](auto& arg)
@@ -769,7 +814,7 @@ export class VulkanRenderer{
     auto  createSwapChain()-> void {
     vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR( *surface );
     swapChainExtent                                = chooseSwapExtent(surfaceCapabilities);
-    uint32_t minImageCount                         = chooseSwapMinImageCount(surfaceCapabilities);
+    minImageCount                         = chooseSwapMinImageCount(surfaceCapabilities);
 
     std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(*surface);
     swapChainSurfaceFormat                             = chooseSwapSurfaceFormat(availableFormats);
@@ -1030,19 +1075,31 @@ export class VulkanRenderer{
     }
 
     auto createDescriptorPool() -> void {
-        std::array<vk::DescriptorPoolSize, 2> poolSizes;
-        poolSizes[0].setType(vk::DescriptorType::eUniformBuffer)
-        .setDescriptorCount(FRAMES_IN_FLIGHT);
-        // Create storage buffer at binding 1 for instancing
-        // There's 3 descriptors per frame in flight
-        poolSizes[1].setType(vk::DescriptorType::eStorageBuffer)
-        .setDescriptorCount(FRAMES_IN_FLIGHT * 3);
-
+         std::array<vk::DescriptorPoolSize, 4> poolSizes = {
+        vk::DescriptorPoolSize{
+            vk::DescriptorType::eUniformBuffer,
+            FRAMES_IN_FLIGHT
+        },
+        vk::DescriptorPoolSize{
+            vk::DescriptorType::eStorageBuffer,
+            FRAMES_IN_FLIGHT * 3
+        },
+        vk::DescriptorPoolSize{
+            vk::DescriptorType::eSampler,
+            2
+        },
+        vk::DescriptorPoolSize{
+            vk::DescriptorType::eSampledImage,
+            100
+        }
+        };
         vk::DescriptorPoolCreateInfo poolInfo;
         poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-        .setMaxSets(FRAMES_IN_FLIGHT * 4) // Four descriptor sets
-        .setPoolSizeCount(poolSizes.size())
+        .setMaxSets(FRAMES_IN_FLIGHT * 4 + 100)
+        .setPoolSizeCount(static_cast<uint32_t>(poolSizes.size()))
         .setPPoolSizes(poolSizes.data());
+
+      
 
         descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
         
@@ -1069,7 +1126,7 @@ export class VulkanRenderer{
 		return vk::raii::ImageView(device, viewInfo);
 	}
 
-	std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties)
+	std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties)
 	{
 		vk::ImageCreateInfo imageInfo = {};
         imageInfo.setImageType(vk::ImageType::e2D)
@@ -1077,7 +1134,7 @@ export class VulkanRenderer{
         .setExtent({width, height, 1})
         .setMipLevels(1)
         .setArrayLayers(1)
-        .setSamples(vk::SampleCountFlagBits::e1)
+        .setSamples(numSamples)
         .setTiling(tiling)
         .setUsage(usage)
         .setSharingMode(vk::SharingMode::eExclusive);
@@ -1097,8 +1154,24 @@ export class VulkanRenderer{
 
     auto createDepthResource() -> void {
         vk::Format depthFormat = vk::Format::eD32Sfloat;
-        std::tie(depthImage, depthImageMemory) = createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        std::tie(depthImage, depthImageMemory) = createImage(swapChainExtent.width, swapChainExtent.height, msaaSamples, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
         depthImageView  = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
+    }
+
+    auto createColorResource() -> void {
+        vk::Format colorFormat = swapChainSurfaceFormat.format;
+
+        std::tie(colorImage, colorImageMemory) = createImage(
+            swapChainExtent.width,
+            swapChainExtent.height,
+            msaaSamples,
+            colorFormat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        colorImageView = createImageView(colorImage, colorFormat, vk::ImageAspectFlagBits::eColor);
+        
+
     }
 
 
@@ -1109,6 +1182,11 @@ export class VulkanRenderer{
     vk::raii::Queue graphicsQueue = nullptr; 
     vk::raii::PhysicalDevice physicalDevice = nullptr;
     vk::raii::Device device = nullptr;
+
+    vk::raii::Image colorImage = nullptr;
+    vk::raii::DeviceMemory colorImageMemory = nullptr;
+    vk::raii::ImageView colorImageView = nullptr;
+    vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e8;
     
 
     vk::raii::CommandPool  commandPool = nullptr; 
@@ -1128,6 +1206,7 @@ export class VulkanRenderer{
 
     u32 queueIndex = 0;
     u32 frameIndex = 0;
+    u32 minImageCount;
 
     vk::raii::SwapchainKHR swapChain = nullptr;
     std::vector<vk::Image> swapChainImages;
@@ -1274,6 +1353,7 @@ export class PipelineBuilder {
         PipelineBuilder& setCullMode        (vk::CullModeFlagBits mode) {pipelineConfig.rasterizer.setCullMode(mode); return *this;}
         PipelineBuilder& setFrontFace       (vk::FrontFace face) {pipelineConfig.rasterizer.setFrontFace(face); return *this;}
         PipelineBuilder& setDepthBiasEnable (vk::Bool32 mode) {pipelineConfig.rasterizer.setDepthBiasEnable(mode); return *this; }
+        PipelineBuilder& setDepthWrite      (vk::Bool32 state) {pipelineConfig.depthStencil.setDepthWriteEnable(state); return *this; }
         PipelineBuilder& setLineWidth       (f32 width) {pipelineConfig.rasterizer.setLineWidth(width); return *this; }
 
         PipelineBuilder& setMultisampleSamples(vk::SampleCountFlagBits flags) {pipelineConfig.multisampling.setRasterizationSamples(flags); return *this; }

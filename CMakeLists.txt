@@ -25,6 +25,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tracy)
 
+FetchContent_Declare(
+        imgui 
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG master
+)
+FetchContent_MakeAvailable(imgui)
+
 find_program(SLANGC_EXECUTABLE slangc REQUIRED)
 
 function(add_slang_shader_target TARGET)
@@ -72,16 +79,33 @@ add_slang_shader_target(
 
 )
 
-add_executable(game main.cpp  ) 
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
 
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+
+target_include_directories(imgui PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+
+add_executable(game main.cpp ) 
 
 
 target_sources(game PUBLIC FILE_SET CXX_MODULES FILES  src/utils/types.cpp  src/window/window.cpp src/utils/logger.cpp src/window/event.cpp src/application/app.cpp
-src/renderer/vulkan_renderer.cpp src/utils/file.cpp src/objects/vertex.cpp src/objects/mesh.cpp src/utils/camera.cpp  src/objects/draw3d.cpp )
+src/renderer/vulkan_renderer.cpp src/utils/file.cpp src/objects/vertex.cpp src/objects/mesh.cpp src/utils/camera.cpp  src/objects/draw3d.cpp src/simulation/simulation.cpp )
 target_compile_options(game PRIVATE -Wall -Wextra -Wpedantic -Werror -fsanitize=address -g -O3 )
 target_link_options(game PRIVATE -fsanitize=address)
         
-target_link_libraries(game PUBLIC SDL3::SDL3 Vulkan::Vulkan TracyClient)
+
+target_link_libraries(imgui PUBLIC SDL3::SDL3 Vulkan::Vulkan)
+
+target_link_libraries(game PUBLIC SDL3::SDL3 Vulkan::Vulkan TracyClient imgui)
 add_dependencies(game slang_shaders)
 include(CTest)
 enable_testing()

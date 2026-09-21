@@ -3,12 +3,13 @@ module;
 #include <array>
 #include <glm/fwd.hpp>
 #include <variant>
-#include <vector>
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/ext/quaternion_transform.hpp>
 #include <glm/matrix.hpp>
+
+
 
 #include <vulkan/vulkan_raii.hpp>
 export module draw3d;
@@ -93,13 +94,13 @@ export class Draw3D {
             .setFrontFace(vk::FrontFace::eCounterClockwise)
             .setLineWidth(1.0f)
             .setDiscardEnable(vk::False)
+            .setMultisampleSamples(vk::SampleCountFlagBits::e8)
             // Input Assembly
             .setInputAssembly(vk::PrimitiveTopology::eTriangleList)
             .setShader("src/shaders/instance.spv", vk::ShaderStageFlagBits::eVertex, "vertMain")
             .setShader("src/shaders/instance.spv", vk::ShaderStageFlagBits::eFragment, "fragMain")
             .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
             .setViewportState(1, 1)
-            .setMultisampleSamples(vk::SampleCountFlagBits::e1) 
             .setMultisampleShading(false)
             .setPipelineSetLayouts(pipelineSetLayouts)
             .build();
@@ -125,6 +126,9 @@ export class Draw3D {
                 vk::BlendFactor::eSrcAlpha,
                 vk::BlendFactor::eOneMinusSrcAlpha
             )
+            .setDepthTest(true)
+            .setDepthWrite(false)
+            .setMultisampleSamples(vk::SampleCountFlagBits::e8)
             .build();
         
             generateSphereData();
@@ -147,6 +151,22 @@ export class Draw3D {
         lights.emplace_back(glm::vec3(0.0, -5.0, 0.0), glm::vec3(0.8));
         
         std::vector<DrawSubmission> drawCalls;
+
+        Mesh& quad = meshes[PrimitiveType::QUAD];
+         drawCalls.emplace_back(
+            gridFloor,
+            quad.vertexBuffer,
+            quad.indexBuffer,
+            uniformBuffer,
+            instanceBuffers[PrimitiveType::QUAD],
+            lightBuffer,
+            quadInstanceData,
+            lights,
+            descriptorSets,
+            quadInstanceData[0].model,
+            static_cast<u32>(quad.getIndices().size()),
+            static_cast<u32>(quadInstanceData.size())
+        );
        
         drawCalls.emplace_back(
             TEMP_PIPELINE,
@@ -163,21 +183,7 @@ export class Draw3D {
             static_cast<u32>(sphereInstanceData.size())
         );
 
-        Mesh& quad = meshes[PrimitiveType::QUAD];
-         drawCalls.emplace_back(
-            gridFloor,
-            quad.vertexBuffer,
-            quad.indexBuffer,
-            uniformBuffer,
-            instanceBuffers[PrimitiveType::QUAD],
-            lightBuffer,
-            quadInstanceData,
-            lights,
-            descriptorSets,
-            glm::identity<glm::mat4>(),
-            static_cast<u32>(quad.getIndices().size()),
-            static_cast<u32>(quadInstanceData.size())
-        );
+      
 
     
         renderer.drawFrame(camera, drawCalls);
@@ -308,12 +314,12 @@ export class Draw3D {
         // bottom left
         quad.emplace_back(glm::vec3{-1.0, 0.0, -1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{0.0, 1.0}, glm::vec3{0.0, 1.0, 0.0} );
         // bottom right
-        quad.emplace_back(glm::vec3{1.0, 0.0, -1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 0.0}, glm::vec3{0.0, 1.0, 0.0} );
+        quad.emplace_back(glm::vec3{1.0, 0.0, -1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 1.0}, glm::vec3{0.0, 1.0, 0.0} );
         // top right
-        quad.emplace_back(glm::vec3{1.0, 0.0, 1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 1.0}, glm::vec3{0.0, 1.0, 0.0} );
+        quad.emplace_back(glm::vec3{1.0, 0.0, 1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 0.0}, glm::vec3{0.0, 1.0, 0.0} );
 
         indices = {
-            0, 1, 2, 0, 2, 3
+            0, 2, 1, 0, 3, 2
         };
         meshes[PrimitiveType::QUAD] = Mesh(quad, indices);
         Mesh &quadMesh = meshes[PrimitiveType::QUAD];

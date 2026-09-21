@@ -1,12 +1,18 @@
 module;
+#include "SDL3/SDL_video.h"
 #include <glm/ext/vector_float3.hpp>
 #include <glm/glm.hpp>
 #include <print>
+#include <vulkan/vulkan_core.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 #include <SDL3/SDL.h>
 #include <chrono>
 #include <print>
+
+#include <imgui.h>
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_vulkan.h"
 
 export module app;
 import window;
@@ -16,6 +22,7 @@ import vulkan_renderer;
 import camera;
 import draw3d;
 import mesh;
+import simulation;
 
 
 export class Application {
@@ -30,6 +37,8 @@ export class Application {
             glm::vec2(800.0, 600.0), 
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
+
+            imguiSetup(window.getSDLWindow());
             }
   
 
@@ -40,6 +49,8 @@ export class Application {
 
             u32 sampleCount = 0;
             f64 accum = 0.0;
+            float dt = 0.0;
+            
            while (window.isWindowOpen())
             {
                
@@ -51,17 +62,16 @@ export class Application {
                     window.setWindowOpen(false);
                 } 
 
+                simulation.update(dt);
                 draw.startDraw();
-                for (u32 i = 0; i < 30; i++)
+                for (const auto object : simulation.getObjectPositions())
                 {
-                    for (u32 j = 0; j < 30; j++)
-                    {
-                        draw.drawSphere(glm::vec3{static_cast<float>(2.0 * i) - 10.0, 0.0, static_cast<float>(2.0 * j) - 10.0}, 1.0);
-                    }
+                    draw.drawSphere(object, 1.0);
                 }
+        
+                // Draws the grid
                 draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f));
-                // sphere with light
-                draw.drawSphere(glm::vec3(0.0, -5.0, 0.0), 0.5);
+               
                 
                 draw.endDraw(*camera_controller.getActiveCamera());
                 
@@ -69,12 +79,12 @@ export class Application {
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
-                camera_controller.updateActiveCamera(event_manager);
+                camera_controller.updateActiveCamera(event_manager, dt);
                
                 
                 end = std::chrono::high_resolution_clock::now();
-                auto delta = std::chrono::duration<double>(end - start);
-                accum += delta.count();
+                dt = std::chrono::duration<float>(end - start).count();
+                accum += dt;
                 sampleCount++;
                 if (sampleCount >= SAMPLES)
                 {
@@ -88,12 +98,50 @@ export class Application {
             
         }
 
-        ~Application() = default;
+        ~Application() {
+            ImGui_ImplVulkan_Shutdown();
+            ImGui_ImplSDL3_Shutdown();
+            ImGui::DestroyContext();
+        }
       
     private:
+       auto imguiSetup(SDL_Window* window) -> void {
+            IMGUI_CHECKVERSION();
+            ImGui::CreateContext();
+            ImGuiIO& io = ImGui::GetIO(); (void)io;
+            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+            ImGui::StyleColorsDark();
+
+            ImGuiStyle &style = ImGui::GetStyle();
+            float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+            style.ScaleAllSizes(main_scale);
+            style.FontScaleDpi = main_scale;
+
+            ImGui_ImplSDL3_InitForVulkan(window);
+            VulkanInfo infoStruct = renderer.getRendererInfo();
+            ImGui_ImplVulkan_InitInfo initInfo = {};
+            initInfo.ApiVersion = VK_API_VERSION_1_4;
+            initInfo.Instance = *infoStruct.g_instance;
+            initInfo.PhysicalDevice = *infoStruct.g_physicalDevice;
+            initInfo.Device = *infoStruct.g_device;
+            initInfo.Queue = *infoStruct.g_queue;
+            initInfo.QueueFamily = infoStruct.g_queueFamily;
+            initInfo.PipelineCache = nullptr;
+            initInfo.DescriptorPool = *infoStruct.g_descriptorPool;
+            initInfo.MinImageCount = infoStruct.g_minImageCount;
+            initInfo.ImageCount = infoStruct.g_ImageCount;
+            initInfo.PipelineInfoMain.RenderPass = nullptr;
+            initInfo.PipelineInfoMain.Subpass = 0;
+            initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+            ImGui_ImplVulkan_Init(&initInfo);
+
+
+
+        }
         Window window;
         EventManager event_manager;
         VulkanRenderer renderer;
+        GravitySimulation simulation;
         draw::Draw3D draw;
          
         CameraController camera_controller;

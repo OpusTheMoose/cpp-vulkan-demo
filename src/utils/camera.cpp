@@ -144,14 +144,14 @@ export class CameraController {
             return &it->second;
 
         }
-        auto updateActiveCamera(EventManager &events)
+        auto updateActiveCamera(EventManager &events, float dt)
         {
             Camera* cam = getCamera(active_camera);
             cam->zoom(events.getMouseState().scroll_amount * 0.1);
-            if (events.isKeyPressed("left"))  cam->rotateAzimuth(glm::radians(0.1f));
-            if (events.isKeyPressed("right")) cam->rotateAzimuth(glm::radians(-0.1f));
-            if (events.isKeyPressed("up"))    cam->rotatePolar(glm::radians(0.1f));
-            if (events.isKeyPressed("down"))  cam->rotatePolar(glm::radians(-0.1f));
+            if (events.isKeyPressed("left"))  cam->rotateAzimuth(glm::radians(45.0f) *dt);
+            if (events.isKeyPressed("right")) cam->rotateAzimuth(glm::radians(-45.0f)*dt);
+            if (events.isKeyPressed("up"))    cam->rotatePolar(glm::radians(45.0f)*dt);
+            if (events.isKeyPressed("down"))  cam->rotatePolar(glm::radians(-45.0f)*dt);
 
             
         }

@@ -22,10 +22,8 @@ struct PushConstants{
 PushConstants pc; 
 
 struct VSOutput {
-    float4 pos: SV_Position;
-    float3 worldPos;
-    float3 normal;
-    float3 color;
+    float4 pos : SV_Position;
+    float2 uv;
 }
 
 
@@ -33,12 +31,18 @@ struct VSOutput {
 VSOutput vertMain(VSInput input) {
   
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(pc.model, float4(input.inPosition, 1.0)))); 
-    output.color = input.inColor;
+    output.pos = mul(ubo.proj, mul(ubo.view, mul(pc.model, float4(input.inPosition, 1.0))));
+    output.uv = input.inTexCoords;
     return output;
 }
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-    return float4(1.0, 1.0, 1.0, 0.1);
+    const float line_width = 0.01f;
+    if (fract(vertIn.uv.x / 0.01) >= line_width &&
+    fract(vertIn.uv.y / 0.01) >= line_width)
+    {
+        discard;
+    }
+    return float4(1.0);
 }
