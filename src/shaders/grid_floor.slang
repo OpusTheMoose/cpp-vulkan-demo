@@ -38,11 +38,23 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-    const float line_width = 0.01f;
-    if (fract(vertIn.uv.x / 0.01) >= line_width &&
-    fract(vertIn.uv.y / 0.01) >= line_width)
+    const float line_width = 0.05f;
+    float4 out_color = float4(0.5);
+    const bool is_in_square =
+        fract(vertIn.uv.x / 0.01) >= line_width &&
+        fract(vertIn.uv.y / 0.01) >= line_width;
+    if (is_in_square)
     {
         discard;
     }
-    return float4(1.0);
+    // Color the axes
+    else if (!is_in_square && vertIn.uv.x > 0.5 && vertIn.uv.x < 0.5 + (line_width * 0.01))
+    {
+        out_color = float4(1.0, float3(0.0));
+    }
+    else if (!is_in_square && vertIn.uv.y > 0.5 && vertIn.uv.y < 0.5 + (line_width * 0.01))
+    {
+        out_color = float4(0.0, 1.0, 0.0, 0.0);
+    }
+    return out_color;
 }

@@ -87,10 +87,11 @@ export class Draw3D {
             .setDepthAttachmentFormat(vk::Format::eD32Sfloat)
             .setDepthClampEnable(vk::False)
             .setDepthTest(vk::True)
+            .setDepthWrite(true)
             .setStencilTest(vk::False)
             // Reasterizer
             .setDepthBiasEnable(vk::False)
-            .setCullMode(vk::CullModeFlagBits::eBack)
+            .setCullMode(vk::CullModeFlagBits::eNone)
             .setPolygonMode(vk::PolygonMode::eFill)
             .setFrontFace(vk::FrontFace::eCounterClockwise)
             .setLineWidth(1.0f)
@@ -118,17 +119,8 @@ export class Draw3D {
                "fragMain")
             .setPushConstant(vk::ShaderStageFlagBits::eVertex, sizeof(glm::mat4))
             .setCullMode(vk::CullModeFlagBits::eNone)
-            .setColorBlendAttachment(true, 
-                vk::ColorComponentFlagBits::eR |
-                vk::ColorComponentFlagBits::eG | 
-                vk::ColorComponentFlagBits::eB |
-                vk::ColorComponentFlagBits::eA)
-            .setColorBlendFactors(
-                vk::BlendFactor::eSrcAlpha,
-                vk::BlendFactor::eOneMinusSrcAlpha
-            )
             .setDepthTest(true)
-            .setDepthWrite(false)
+            .setDepthWrite(true)
             .setMultisampleSamples(vk::SampleCountFlagBits::e8)
             .build();
         
@@ -153,21 +145,6 @@ export class Draw3D {
         
         std::vector<DrawSubmission> drawCalls;
 
-        Mesh& quad = meshes[PrimitiveType::QUAD];
-         drawCalls.emplace_back(
-            gridFloor,
-            quad.vertexBuffer,
-            quad.indexBuffer,
-            uniformBuffer,
-            instanceBuffers[PrimitiveType::QUAD],
-            lightBuffer,
-            quadInstanceData,
-            lights,
-            descriptorSets,
-            quadInstanceData[0].model,
-            static_cast<u32>(quad.getIndices().size()),
-            static_cast<u32>(quadInstanceData.size())
-        );
        
         drawCalls.emplace_back(
             TEMP_PIPELINE,
@@ -184,6 +161,21 @@ export class Draw3D {
             static_cast<u32>(sphereInstanceData.size())
         );
 
+        Mesh& quad = meshes[PrimitiveType::QUAD];
+         drawCalls.emplace_back(
+            gridFloor,
+            quad.vertexBuffer,
+            quad.indexBuffer,
+            uniformBuffer,
+            instanceBuffers[PrimitiveType::QUAD],
+            lightBuffer,
+            quadInstanceData,
+            lights,
+            descriptorSets,
+            quadInstanceData[0].model,
+            static_cast<u32>(quad.getIndices().size()),
+            static_cast<u32>(quadInstanceData.size())
+        );
       
 
     

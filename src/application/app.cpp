@@ -49,6 +49,7 @@ export class Application {
 
             u32 sampleCount = 0;
             f64 accum = 0.0;
+            f64 fps = 0.0;
             float dt = 0.0;
             
            while (window.isWindowOpen())
@@ -66,8 +67,8 @@ export class Application {
                 ImGui_ImplVulkan_NewFrame();
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
-                ImGui::Begin("Hello, world!");
-                ImGui::Text("This is some text");
+                ImGui::Begin("Application Info");
+                ImGui::Text("FPS (%u samples): %0.1f", SAMPLES, fps);
                 ImGui::End();
 
                 ImGui::Render();
@@ -79,7 +80,7 @@ export class Application {
                     draw.drawSphere(object, 1.0);
                 }
                 // Draws the grid
-                draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f));
+                draw.drawQuad(glm::vec3(0.0, -0.01, 0.0), glm::vec3(50.0f));
                 draw.endDraw(*camera_controller.getActiveCamera());
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
@@ -93,7 +94,7 @@ export class Application {
                 sampleCount++;
                 if (sampleCount >= SAMPLES)
                 {
-                    std::println("{} FPS over {} samples", 1.0 / (accum / SAMPLES) , SAMPLES);
+                    fps = 1.0 / (accum / SAMPLES);
                     sampleCount = 0;
                     accum = 0.0;
                 }  
@@ -151,6 +152,7 @@ export class Application {
             VkFormat colorFormat = static_cast<VkFormat>(renderer.getSwapSurfaceFormat().format);
             initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount =1 ;
             initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
+            initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;   //vk::Format::eD32Sfloat;
             initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
 
             ImGui_ImplVulkan_Init(&initInfo);
