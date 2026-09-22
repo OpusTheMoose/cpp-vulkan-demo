@@ -1,14 +1,11 @@
 module;
 #include "SDL3/SDL_error.h"
 #include "SDL3/SDL_init.h"
-#include "SDL3/SDL_render.h"
 #include "SDL3/SDL_video.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_video.h>
 #include <exception>
 #include <memory>
-#include <print>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 export module window;
@@ -58,6 +55,12 @@ export class Window {
         auto isWindowOpen() -> bool {return this->isOpen; }
         auto getSDLWindow() -> SDL_Window* {
             return sdl_window.get();
+        }
+        auto getFramebufferSize()
+        {
+            i32 w, h;
+            SDL_GetWindowSizeInPixels(sdl_window.get(), &w, &h );
+            return std::tuple<int, int>(w, h);
         }
         ~Window() { 
             SDL_Quit();

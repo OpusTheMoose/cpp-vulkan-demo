@@ -4,6 +4,7 @@ module;
 #include "SDL3/SDL_events.h"
 #include "SDL3/SDL_init.h"
 #include "SDL3/SDL_scancode.h"
+#include "imgui_impl_sdl3.h"
 #include <iostream>
 export module event;
 import window;
@@ -46,7 +47,7 @@ export class EventManager {
             this->mouse.scroll_amount = 0;
             while (SDL_PollEvent(&e))
             {
-                
+                ImGui_ImplSDL3_ProcessEvent(&e); 
                 switch (e.type)
                 {
                     // Key up / down
@@ -58,10 +59,13 @@ export class EventManager {
                         break;
                     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                         window->setWindowOpen(false);
+                        break;
                     case SDL_EVENT_WINDOW_RESIZED:
                         window->setFramebufferResized(true);
+                        break;
                     case SDL_EVENT_MOUSE_WHEEL:
                         this->mouse.scroll_amount = e.wheel.y;
+                        break;
                 }
             }
         }

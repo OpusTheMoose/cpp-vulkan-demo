@@ -62,20 +62,25 @@ export class Application {
                     window.setWindowOpen(false);
                 } 
 
+
+                ImGui_ImplVulkan_NewFrame();
+                ImGui_ImplSDL3_NewFrame();
+                ImGui::NewFrame();
+                ImGui::Begin("Hello, world!");
+                ImGui::Text("This is some text");
+                ImGui::End();
+
+                ImGui::Render();
+
                 simulation.update(dt);
                 draw.startDraw();
                 for (const auto object : simulation.getObjectPositions())
                 {
                     draw.drawSphere(object, 1.0);
                 }
-        
                 // Draws the grid
                 draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f));
-               
-                
                 draw.endDraw(*camera_controller.getActiveCamera());
-                
-                
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
@@ -94,6 +99,7 @@ export class Application {
                 }  
                 
             }
+
             renderer.waitIdle();
             
         }
@@ -126,24 +132,36 @@ export class Application {
             initInfo.Device = *infoStruct.g_device;
             initInfo.Queue = *infoStruct.g_queue;
             initInfo.QueueFamily = infoStruct.g_queueFamily;
-            initInfo.PipelineCache = nullptr;
             initInfo.DescriptorPool = *infoStruct.g_descriptorPool;
             initInfo.MinImageCount = infoStruct.g_minImageCount;
             initInfo.ImageCount = infoStruct.g_ImageCount;
+
+            initInfo.UseDynamicRendering = true;
             initInfo.PipelineInfoMain.RenderPass = nullptr;
             initInfo.PipelineInfoMain.Subpass = 0;
-            initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+            initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_8_BIT;
+
+
+            initInfo.CheckVkResultFn = [](VkResult result) {
+            if (result != VK_SUCCESS) {
+                std::println("ImGui Vulkan error: {}", static_cast<int>(result));
+            }
+            };
+
+            VkFormat colorFormat = static_cast<VkFormat>(renderer.getSwapSurfaceFormat().format);
+            initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount =1 ;
+            initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
+            initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+
             ImGui_ImplVulkan_Init(&initInfo);
-
-
-
         }
+
+      
         Window window;
         EventManager event_manager;
         VulkanRenderer renderer;
         GravitySimulation simulation;
         draw::Draw3D draw;
-         
         CameraController camera_controller;
         
 };

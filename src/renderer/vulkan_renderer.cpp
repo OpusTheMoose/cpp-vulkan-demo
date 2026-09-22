@@ -8,9 +8,11 @@ module;
 #include <utility>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
+#include <imgui.h>
 
 #include "SDL3/SDL_error.h"
 #include "SDL3/SDL_vulkan.h"
+#include "imgui_impl_vulkan.h"
 #include "vulkan/vulkan.hpp"
 #include <SDL3/SDL_video.h>
 
@@ -124,6 +126,7 @@ export struct VulkanInfo {
     vk::raii::Instance& g_instance;
     vk::raii::PhysicalDevice g_physicalDevice;
     vk::raii::Device& g_device;
+    VkSurfaceKHR& g_surface;
 
     vk::raii::Queue g_queue;
     u32 g_queueFamily;
@@ -348,7 +351,7 @@ export class VulkanRenderer{
 
     
         
-        auto drawFrame(Camera camera, std::span<DrawSubmission> const& drawCalls) -> void {
+        auto drawFrame(Camera camera, std::span<DrawSubmission> const& drawCalls, ImDrawData* drawData) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -382,10 +385,11 @@ export class VulkanRenderer{
                 updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, draw.lightBuffer.bufferSize);
 
             }
+      
             
 
             commandBuffers[frameIndex].reset();
-            recordCommandBuffer(drawCalls, imageIndex);
+            recordCommandBuffer(drawCalls, drawData, imageIndex );
 
             graphicsQueue.waitIdle();
 
@@ -414,6 +418,7 @@ export class VulkanRenderer{
             if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || window->isFramebufferResized())
             {
                 window->setFramebufferResized(false);
+                ImGui_ImplVulkan_SetMinImageCount(minImageCount);
                 recreateSwapChain();
             }
             else
@@ -449,6 +454,7 @@ export class VulkanRenderer{
         switch (type)
         {
             case FRAME:
+
                 write.setDstSet(set)
                     .setDstBinding(0)
                     .setDescriptorCount(1)
@@ -490,6 +496,7 @@ export class VulkanRenderer{
             instance,
             physicalDevice,
             device,
+            windowSurface,
             graphicsQueue,
             queueIndex,
             nullptr,
@@ -506,7 +513,7 @@ export class VulkanRenderer{
 
     private:
 
-    auto recordCommandBuffer(std::span<DrawSubmission> drawCalls, u32 imageIndex) -> void
+    auto recordCommandBuffer(std::span<DrawSubmission> drawCalls,  ImDrawData* imguiDraw, u32 imageIndex) -> void
     {
         auto &commandBuffer = commandBuffers[frameIndex];
         commandBuffer.begin({});
@@ -597,6 +604,7 @@ export class VulkanRenderer{
             commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
             
         }
+      ImGui_ImplVulkan_RenderDrawData(imguiDraw, *commandBuffer);
         
 
         commandBuffer.endRendering();
@@ -685,14 +693,14 @@ export class VulkanRenderer{
 
     // TODO: Remove window reference
     auto createSurface(Window& window) -> void {
-        VkSurfaceKHR _surface;
+        
         assert(window.getSDLWindow() != nullptr);
 
-        if (SDL_Vulkan_CreateSurface(window.getSDLWindow(), *instance, nullptr, &_surface) == false)
+        if (SDL_Vulkan_CreateSurface(window.getSDLWindow(), *instance, nullptr, &windowSurface) == false)
         {
             throw std::runtime_error("Unable to create window surface for Vulkan " + std::string(SDL_GetError()));
         }
-        surface = vk::raii::SurfaceKHR(instance, _surface);
+        surface = vk::raii::SurfaceKHR(instance, windowSurface);
 
     }
 
@@ -1217,6 +1225,7 @@ export class VulkanRenderer{
 
     Logger logger;
     Window* window; 
+    VkSurfaceKHR windowSurface;
 
 };
 

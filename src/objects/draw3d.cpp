@@ -1,4 +1,5 @@
 module;
+#include "imgui.h"
 #include "vulkan/vulkan.hpp"
 #include <array>
 #include <glm/fwd.hpp>
@@ -186,7 +187,7 @@ export class Draw3D {
       
 
     
-        renderer.drawFrame(camera, drawCalls);
+        renderer.drawFrame(camera, drawCalls, ImGui::GetDrawData());
         
        }
 
