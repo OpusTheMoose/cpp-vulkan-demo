@@ -11,6 +11,7 @@ module;
 #include <unordered_map>
 #include <string>
 #include <utility>
+#include <print>
 
 export module camera;
 import logger;
@@ -110,7 +111,7 @@ export class Camera {
         glm::vec3 center;
 
         float azimuthAngle = 0.0f;
-        float polarAngle = 45.0f;
+        float polarAngle = glm::radians(45.0f);
         float radius = 20.0f;
 };
 
@@ -144,16 +145,19 @@ export class CameraController {
             return &it->second;
 
         }
-        auto updateActiveCamera(EventManager &events, float dt)
+        auto updateActiveCamera(EventManager &events)
         {
             Camera* cam = getCamera(active_camera);
             cam->zoom(events.getMouseState().scroll_amount * 0.1);
-            if (events.isKeyPressed("left"))  cam->rotateAzimuth(glm::radians(45.0f) *dt);
-            if (events.isKeyPressed("right")) cam->rotateAzimuth(glm::radians(-45.0f)*dt);
-            if (events.isKeyPressed("up"))    cam->rotatePolar(glm::radians(45.0f)*dt);
-            if (events.isKeyPressed("down"))  cam->rotatePolar(glm::radians(-45.0f)*dt);
+   
+            constexpr float sensitivity = 0.005f; // radians per pixel
 
-            
+            const auto& mouse = events.getMouseState();
+            if (mouse.isMiddleButtonPressed()) {
+                cam->rotateAzimuth((mouse.mouse_x - mouse.prev_mouse_x) * sensitivity);
+                cam->rotatePolar((mouse.mouse_y - mouse.prev_mouse_y) * sensitivity);
+            }
+         
         }
    
 

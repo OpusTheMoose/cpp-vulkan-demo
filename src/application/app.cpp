@@ -85,7 +85,7 @@ export class Application {
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
-                camera_controller.updateActiveCamera(event_manager, dt);
+                camera_controller.updateActiveCamera(event_manager);
                
                 
                 end = std::chrono::high_resolution_clock::now();

@@ -157,8 +157,11 @@ export class Draw3D {
             lights,
             descriptorSets,
             std::monostate(),
+            camera.getProjMatrix(),
+            camera.getViewMatrix(),
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
+            
         );
 
         Mesh& quad = meshes[PrimitiveType::QUAD];
@@ -173,13 +176,16 @@ export class Draw3D {
             lights,
             descriptorSets,
             quadInstanceData[0].model,
+            camera.getProjMatrix(),
+            camera.getViewMatrix(),
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())
+           
         );
       
 
     
-        renderer.drawFrame(camera, drawCalls, ImGui::GetDrawData());
+        renderer.drawFrame(drawCalls, ImGui::GetDrawData());
         
        }
 

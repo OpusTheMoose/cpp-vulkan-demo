@@ -36,8 +36,6 @@ import window;
 import file;
 import vertex;
 
-import camera;
-
 const std::vector<char const*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
@@ -118,6 +116,8 @@ export struct DrawSubmission {
     Descriptors const& descriptorSets;
 
     PushConstant pushConstant;
+    glm::mat4 proj;
+    glm::mat4 view;
 
     u32 indexCount, instanceCount;
 };
@@ -351,7 +351,7 @@ export class VulkanRenderer{
 
     
         
-        auto drawFrame(Camera camera, std::span<DrawSubmission> const& drawCalls, ImDrawData* drawData) -> void {
+        auto drawFrame(std::span<DrawSubmission> const& drawCalls, ImDrawData* drawData) -> void {
             auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
 		    if (fenceResult != vk::Result::eSuccess)
 		    {
@@ -373,13 +373,14 @@ export class VulkanRenderer{
 
             device.resetFences(*inFlightFences[frameIndex]);
 
-            UniformBufferObject cameraUBO = {};
-            cameraUBO.proj = camera.getProjMatrix();
-            cameraUBO.view = camera.getViewMatrix();
-
+          
             for (auto draw : drawCalls)
             {
-                updateUniformBuffer(camera, cameraUBO, draw.uniformBuffer, frameIndex);
+                UniformBufferObject cameraUBO = {};
+                cameraUBO.proj = draw.proj;
+                cameraUBO.view = draw.view;
+
+                updateUniformBuffer(cameraUBO, draw.uniformBuffer, frameIndex);
 
                 updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceBuffer.bufferSize);
                 updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, draw.lightBuffer.bufferSize);
@@ -1074,11 +1075,7 @@ export class VulkanRenderer{
 
   
 
-    auto updateUniformBuffer(Camera& camera, UniformBufferObject& uniformBufferObject, const Buffer& ubo, u32 frameIndex) -> void {
-       
-        uniformBufferObject.view = camera.getViewMatrix(); 
-        uniformBufferObject.proj = camera.getProjMatrix();
-
+    auto updateUniformBuffer( UniformBufferObject& uniformBufferObject, const Buffer& ubo, u32 frameIndex) -> void {
         memcpy(ubo.buffersMapped[frameIndex], &uniformBufferObject, sizeof(UniformBufferObject));
     }
 
