@@ -97,6 +97,7 @@ export class EventManager {
             
             return keys.at(key_value);
         }
+   
 
         auto getMouseState() -> MouseState {
             return mouse;

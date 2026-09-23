@@ -56,6 +56,7 @@ export class Window {
         auto getSDLWindow() -> SDL_Window* {
             return sdl_window.get();
         }
+
         auto getFramebufferSize()
         {
             i32 w, h;

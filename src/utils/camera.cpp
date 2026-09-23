@@ -1,5 +1,7 @@
 module;
+
 #include <cassert>
+#include <glm/ext/vector_float3_precision.hpp>
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -11,7 +13,7 @@ module;
 #include <unordered_map>
 #include <string>
 #include <utility>
-#include <print>
+
 
 export module camera;
 import logger;
@@ -98,10 +100,13 @@ export class Camera {
 
     }
 
-   
-    // auto processMouseInput(float mouseX, float mouseY) -> void {
+    auto translatePosition(glm::vec3 translation)
+    {
+        center += translation;
+    }
+    auto getPolarAngle() {return polarAngle; }
+    auto getAzimuthAngle() {return azimuthAngle; }
 
-    // }
 
     private:
         std::string label;
@@ -153,9 +158,23 @@ export class CameraController {
             constexpr float sensitivity = 0.005f; // radians per pixel
 
             const auto& mouse = events.getMouseState();
-            if (mouse.isMiddleButtonPressed()) {
+            if (mouse.isMiddleButtonPressed() && !events.isKeyPressed("left shift")) {
                 cam->rotateAzimuth((mouse.mouse_x - mouse.prev_mouse_x) * sensitivity);
                 cam->rotatePolar((mouse.mouse_y - mouse.prev_mouse_y) * sensitivity);
+            }
+            if (events.isKeyPressed("left shift") && mouse.isMiddleButtonPressed())
+            {
+                constexpr float move_sens = 0.01f;
+                auto const delta_x = mouse.mouse_x - mouse.prev_mouse_x;
+                auto const delta_y = mouse.mouse_y - mouse.prev_mouse_y;
+
+                // Derivative of the azimuth angle determines how much left-right we move
+                auto phi_hat = glm::vec3(-sin(cam->getAzimuthAngle()), 0.0, cos(cam->getAzimuthAngle()));
+
+                cam->translatePosition(glm::vec3(
+                    phi_hat.x * delta_x * move_sens, 
+                    delta_y *  move_sens, 
+                    phi_hat.z * delta_x * move_sens));
             }
          
         }

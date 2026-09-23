@@ -39,6 +39,7 @@ export class Application {
             .setActiveCamera("OrbitCamera");
 
             imguiSetup(window.getSDLWindow());
+
             }
   
 
