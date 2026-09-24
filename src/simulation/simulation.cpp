@@ -1,8 +1,12 @@
 module;
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <mutex>
 #include <span>
+#include <stop_token>
 #include<glm/glm.hpp>
+#include <thread>
 export module simulation;
 import types;
 
@@ -31,8 +35,25 @@ export class GravitySimulation {
 
         }
 
-        auto update(float dt) -> void {
-         
+        auto runSimulation(std::stop_token stop) {
+            using clock = std::chrono::steady_clock;
+            const auto step = std::chrono::duration_cast<clock::duration>(
+                std::chrono::duration<double>(dt));
+
+            auto next_update = clock::now();
+            while(!stop.stop_requested()){
+                update(dt);
+            
+                next_update += step;
+                std::this_thread::sleep_until(next_update);
+
+                if (clock::now() > next_update + step) next_update = clock::now();
+            }
+
+        }
+
+        auto update(double dt) -> void {
+            std::scoped_lock lock(objects_mutex);
            for (size_t pos1 = 0; pos1 < num_of_objects; pos1++)
            {
                 glm::dvec3 accel_gravity = glm::dvec3{0.0};
@@ -44,23 +65,29 @@ export class GravitySimulation {
                         auto r_mag = glm::length(r_vector);
                         double accel = -1.0 * big_G * (objects.masses[pos2]) / pow(r_mag, 2.0);
                         auto r_unit_vector = r_vector / r_mag;
-                        accel_gravity = accel * r_unit_vector;
+                        accel_gravity += accel * r_unit_vector;
 
                     }
                 }
-                objects.velocites[pos1] += accel_gravity * static_cast<double>(dt);
+                objects.velocites[pos1] += accel_gravity * dt;
            } 
            for (size_t i = 0; i < num_of_objects; i++)
            {
-                objects.positions[i] += objects.velocites[i];
+           
+                objects.positions[i] += objects.velocites[i] * dt;
            }
         }
 
-        auto getObjectPositions() -> std::span<glm::dvec3> {
+        auto getObjectPositions() -> std::array<glm::dvec3, num_of_objects> const {
+            std::scoped_lock lock(objects_mutex);
             return objects.positions;
         }
+        auto getSimulationHz() const -> double {return simulation_hz; }
 
     private:
+        std::mutex objects_mutex;
+        double simulation_hz = 60.0;
+        double dt = 1.0 / simulation_hz;
         ObjectData objects;
 
 };

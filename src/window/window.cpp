@@ -61,7 +61,7 @@ export class Window {
         {
             i32 w, h;
             SDL_GetWindowSizeInPixels(sdl_window.get(), &w, &h );
-            return std::tuple<int, int>(w, h);
+            return std::pair<int, int>(w, h);
         }
         ~Window() { 
             SDL_Quit();

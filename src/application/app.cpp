@@ -1,14 +1,18 @@
 module;
 #include "SDL3/SDL_video.h"
+#include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/vector_float3.hpp>
+#include <glm/geometric.hpp>
 #include <glm/glm.hpp>
 #include <print>
+#include <stop_token>
 #include <vulkan/vulkan_core.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 #include <SDL3/SDL.h>
 #include <chrono>
 #include <print>
+#include <thread>
 
 #include <imgui.h>
 #include "imgui_impl_sdl3.h"
@@ -29,7 +33,10 @@ export class Application {
     public:
         Application() : window(800, 600, "Game"), 
                         event_manager(&window),
-                        renderer(window), draw(renderer)
+                        renderer(window), draw(renderer),
+                        simulationThread([this](std::stop_token stop){
+                            simulation.runSimulation(stop);
+                        })
             {
            camera_controller.registerCamera(
             Camera(glm::vec3(2.0f, 2.0f, 2.0f), 
@@ -65,6 +72,7 @@ export class Application {
                 } 
 
 
+                selectObject();
                 ImGui_ImplVulkan_NewFrame();
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
@@ -72,16 +80,19 @@ export class Application {
                 ImGui::Text("FPS (%u samples): %0.1f", SAMPLES, fps);
                 ImGui::End();
 
-                ImGui::Render();
+                ImGui::Begin("Simulation Info");
+                ImGui::Text("Simulation Speed: %0.1lf hz", simulation.getSimulationHz());
+                ImGui::End();
 
-                simulation.update(dt);
+                ImGui::Render();
+                
                 draw.startDraw();
                 for (const auto object : simulation.getObjectPositions())
                 {
                     draw.drawSphere(object, 1.0);
                 }
                 // Draws the grid
-                draw.drawQuad(glm::vec3(0.0, -0.01, 0.0), glm::vec3(50.0f));
+                draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f));
                 draw.endDraw(*camera_controller.getActiveCamera());
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
@@ -159,12 +170,45 @@ export class Application {
             ImGui_ImplVulkan_Init(&initInfo);
         }
 
-      
+        auto selectObject() -> void {
+            auto mouse = event_manager.getMouseState(); 
+            glm::vec3 nearPoint = glm::unProject(glm::vec3(mouse.mouse_x, mouse.mouse_y, 0.0),
+            camera_controller.getActiveCamera()->getViewMatrix(),
+            camera_controller.getActiveCamera()->getProjMatrix(), 
+            glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
+
+
+
+            glm::vec3 farPoint = glm::unProject(glm::vec3(mouse.mouse_x, mouse.mouse_y, 1.0),
+            camera_controller.getActiveCamera()->getViewMatrix(),
+            camera_controller.getActiveCamera()->getProjMatrix(), 
+            glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
+
+            glm::vec3 raydir = glm::normalize(farPoint - nearPoint);
+            const glm::vec3 testpos = glm::vec3(0.0);
+
+            auto const distance_from_sphere = nearPoint - testpos;
+            const float discrim = 
+            pow(glm::dot(raydir, distance_from_sphere), 2.0) -
+            (pow(glm::length(distance_from_sphere), 2.0) - 1.0);
+
+     
+            std::println("{}",discrim);
+            
+            if (discrim >= 0)
+            {
+                std::println("HIGHLIGHT");
+            } 
+
+        }
+
+    
         Window window;
         EventManager event_manager;
         VulkanRenderer renderer;
         GravitySimulation simulation;
         draw::Draw3D draw;
         CameraController camera_controller;
+        std::jthread simulationThread;
         
 };
