@@ -20,6 +20,13 @@ struct ObjectData {
     std::array<glm::dvec3, num_of_objects> velocites;
     std::array<double, num_of_objects> masses;
 };
+// Single version of ObjectData, just a non-owning view of a single piece of simulation data
+export struct SimulationObject {
+    glm::dvec3 position;
+    glm::dvec3 velocity;
+    double mass;
+};
+
 export class GravitySimulation {
     public:
         GravitySimulation(){
@@ -83,6 +90,21 @@ export class GravitySimulation {
             return objects.positions;
         }
         auto getSimulationHz() const -> double {return simulation_hz; }
+        auto getSimulationObjectCount() const -> size_t {return num_of_objects; }
+
+        /* id is position in the objects array. Note this requires obtaining a mutex lock,
+            so use this function sparingly
+        */ 
+        auto getObjectFromId(size_t objectPos) {
+            std::scoped_lock lock(objects_mutex);
+            assert(objectPos < num_of_objects);
+            return SimulationObject {
+                objects.positions[objectPos],
+                objects.velocites[objectPos],
+                objects.masses[objectPos]
+            };
+        }
+
 
     private:
         std::mutex objects_mutex;

@@ -27,6 +27,7 @@ import camera;
 import draw3d;
 import mesh;
 import simulation;
+import raycast;
 
 
 export class Application {
@@ -72,7 +73,7 @@ export class Application {
                 } 
 
 
-                selectObject();
+                
                 ImGui_ImplVulkan_NewFrame();
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
@@ -84,7 +85,11 @@ export class Application {
                 ImGui::Text("Simulation Speed: %0.1lf hz", simulation.getSimulationHz());
                 ImGui::End();
 
+                selectObject();
+
                 ImGui::Render();
+
+                
                 
                 draw.startDraw();
                 for (const auto object : simulation.getObjectPositions())
@@ -94,12 +99,13 @@ export class Application {
                 // Draws the grid
                 draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f));
                 draw.endDraw(*camera_controller.getActiveCamera());
+                
+
                 i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
                 camera_controller.updateActiveCamera(event_manager);
-               
-                
+
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
                 accum += dt;
@@ -170,45 +176,73 @@ export class Application {
             ImGui_ImplVulkan_Init(&initInfo);
         }
 
+        enum SelectState {
+            NOT_HIGHLIGHTED,
+            HIGHLIGHTED_NOT_SELECTED,
+            SELECTED
+        };
+
         auto selectObject() -> void {
-            auto mouse = event_manager.getMouseState(); 
-            glm::vec3 nearPoint = glm::unProject(glm::vec3(mouse.mouse_x, mouse.mouse_y, 0.0),
-            camera_controller.getActiveCamera()->getViewMatrix(),
-            camera_controller.getActiveCamera()->getProjMatrix(), 
-            glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
 
-
-
-            glm::vec3 farPoint = glm::unProject(glm::vec3(mouse.mouse_x, mouse.mouse_y, 1.0),
-            camera_controller.getActiveCamera()->getViewMatrix(),
-            camera_controller.getActiveCamera()->getProjMatrix(), 
-            glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
-
-            glm::vec3 raydir = glm::normalize(farPoint - nearPoint);
-            const glm::vec3 testpos = glm::vec3(0.0);
-
-            auto const distance_from_sphere = nearPoint - testpos;
-            const float discrim = 
-            pow(glm::dot(raydir, distance_from_sphere), 2.0) -
-            (pow(glm::length(distance_from_sphere), 2.0) - 1.0);
-
-     
-            std::println("{}",discrim);
-            
-            if (discrim >= 0)
+            if (state == HIGHLIGHTED_NOT_SELECTED && event_manager.getMouseState().isLeftButtonPressed())
             {
-                std::println("HIGHLIGHT");
-            } 
+                state=SELECTED;
+            }
+            if(state==SELECTED){
+                ImGui::Begin("Object");
+                ImGui::Text("Test");
+                ImGui::End();
+                return;
+            }
 
+            auto mouse = event_manager.getMouseState(); 
+            auto nearPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 0.0));
+            auto farPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 1.0));
+
+            auto const& objectData = simulation.getObjectPositions(); 
+
+            for (size_t i = 0; i < simulation.getSimulationObjectCount(); i++)
+            {
+             
+                const float discrim = 
+                raycast.testRayOnSphere(Ray(nearPoint, farPoint), static_cast<glm::vec3>(objectData[i]), 1.0);
+            
+                if (discrim >= 0 && state == NOT_HIGHLIGHTED)
+                {
+                    selectedObject = simulation.getObjectFromId(i);
+                    state = HIGHLIGHTED_NOT_SELECTED;
+                } 
+                else if (discrim < 0 && state != SELECTED)
+                {
+                    state = NOT_HIGHLIGHTED;
+                }
+                
+            }
+         
+
+        }
+
+        auto screenSpaceToWorldCoordinates(glm::vec3 screenCoordinates) -> const glm::vec3 {
+           
+            return glm::unProject(screenCoordinates,
+            camera_controller.getActiveCamera()->getViewMatrix(),
+            camera_controller.getActiveCamera()->getProjMatrix(), 
+            glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
         }
 
     
         Window window;
+        Raycast raycast;
         EventManager event_manager;
         VulkanRenderer renderer;
         GravitySimulation simulation;
         draw::Draw3D draw;
         CameraController camera_controller;
         std::jthread simulationThread;
+
+        SimulationObject selectedObject;
+        SelectState state = NOT_HIGHLIGHTED;
+        
+
         
 };
