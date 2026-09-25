@@ -13,6 +13,7 @@ module;
 #include <chrono>
 #include <print>
 #include <thread>
+#include <tracy/Tracy.hpp>
 
 #include <imgui.h>
 #include "imgui_impl_sdl3.h"
@@ -64,16 +65,19 @@ export class Application {
            while (window.isWindowOpen())
             {
                
-                start = std::chrono::high_resolution_clock::now(); 
-                event_manager.pollEvents();
+                ZoneScopedN("Application frame");
+                start = std::chrono::high_resolution_clock::now();
+                { 
+                    ZoneScopedN("Poll events");
+                    event_manager.pollEvents();
+                }
                 
                 if (event_manager.isKeyPressed("escape"))
                 {
                     window.setWindowOpen(false);
                 } 
-
-
-                
+                {
+                ZoneScopedN("ImGUI Application Info")
                 ImGui_ImplVulkan_NewFrame();
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
@@ -81,20 +85,38 @@ export class Application {
                 ImGui::Text("FPS (%u samples): %0.1f", SAMPLES, fps);
                 ImGui::End();
 
+                 int hrs = 0, minutes = 0, seconds = 0;
                 ImGui::Begin("Simulation Info");
-                ImGui::Text("Simulation Speed: %0.1lf hz", simulation.getSimulationHz());
+                ImGui::Text("Simulation Frequnecy: %0.1lf hz", simulation.getSimulationHz());
+                ImGui::Text("Simulation Speed: %lf / s", simulation.getSimulationSpeed());
+
+                ImGui::SetNextItemWidth(80);
+                ImGui::InputInt("H", &hrs);
+
+                ImGui::SetNextItemWidth(80);
+                ImGui::SameLine(120); ImGui::InputInt("M", &minutes);
+
+                ImGui::SetNextItemWidth(80);
+                ImGui::SameLine(220); ImGui::InputInt("S", &seconds);
+
+
                 ImGui::End();
 
                 selectObject();
 
                 ImGui::Render();
 
-                
+                simulation.setSimulationSpeed(hrs * 3600.0 + minutes * 60 + seconds);
+                }
+
                 
                 draw.startDraw();
-                for (const auto object : simulation.getObjectPositions())
                 {
-                    draw.drawSphere(object, 1.0);
+                    ZoneScopedN("Draw submission");
+                    for (const auto object : simulation.getObjectPositions())
+                    {
+                        draw.drawSphere(object, 1.0);
+                    }
                 }
                 // Draws the grid
                 draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f));
@@ -116,6 +138,8 @@ export class Application {
                     sampleCount = 0;
                     accum = 0.0;
                 }  
+
+                FrameMark;
                 
             }
 
@@ -184,15 +208,15 @@ export class Application {
 
         auto selectObject() -> void {
 
-            if (state == HIGHLIGHTED_NOT_SELECTED && event_manager.getMouseState().isLeftButtonPressed())
-            {
-                state=SELECTED;
-            }
             if(state==SELECTED){
+                selectedObject =  simulation.getObjectFromId(selectedObject.id);
                 ImGui::Begin("Object");
-                ImGui::Text("Test");
+                ImGui::Text("Position: %lf, %lf, %lf m", selectedObject.position.x, selectedObject.position.y, selectedObject.position.z);
+                ImGui::Text("Velocity: %lf, %lf, %lf m/s", selectedObject.velocity.x, selectedObject.velocity.y, selectedObject.velocity.z);
+                ImGui::Text("Mass: %lf Kg", selectedObject.mass);
+
+
                 ImGui::End();
-                return;
             }
 
             auto mouse = event_manager.getMouseState(); 
@@ -205,17 +229,25 @@ export class Application {
             {
              
                 const float discrim = 
-                raycast.testRayOnSphere(Ray(nearPoint, farPoint), static_cast<glm::vec3>(objectData[i]), 1.0);
-            
-                if (discrim >= 0 && state == NOT_HIGHLIGHTED)
+                raycast.testRayOnSphere(
+                    Ray(nearPoint, farPoint), 
+                    static_cast<glm::vec3>(objectData[i]), 
+                    1.0);
+                  
+                if (discrim >= 0)
                 {
-                    selectedObject = simulation.getObjectFromId(i);
-                    state = HIGHLIGHTED_NOT_SELECTED;
-                } 
-                else if (discrim < 0 && state != SELECTED)
-                {
-                    state = NOT_HIGHLIGHTED;
+                    if (mouse.isLeftButtonPressed())
+                    {
+                        selectedObject = simulation.getObjectFromId(i);
+                        state = SELECTED;
+                    }
+              
                 }
+                else if (discrim < 0 && state != SELECTED) {
+                    state=NOT_HIGHLIGHTED;
+                }
+     
+        
                 
             }
          

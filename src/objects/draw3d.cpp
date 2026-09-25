@@ -9,7 +9,7 @@ module;
 #include <glm/gtc/quaternion.hpp>
 #include <glm/ext/quaternion_transform.hpp>
 #include <glm/matrix.hpp>
-
+#include <tracy/Tracy.hpp>
 
 
 #include <vulkan/vulkan_raii.hpp>

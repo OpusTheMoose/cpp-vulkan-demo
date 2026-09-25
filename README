@@ -1,2 +1,4 @@
 compile: cmake -G Ninja -S . -B build
 cmake --build build to run
+
+cmake -G Ninja -S . -B build -DTRACY_ENABLE=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo

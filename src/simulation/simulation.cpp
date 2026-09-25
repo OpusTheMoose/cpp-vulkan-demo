@@ -2,8 +2,9 @@ module;
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <common/TracySystem.hpp>
 #include <mutex>
-#include <span>
+#include <tracy/Tracy.hpp>
 #include <stop_token>
 #include<glm/glm.hpp>
 #include <thread>
@@ -25,6 +26,7 @@ export struct SimulationObject {
     glm::dvec3 position;
     glm::dvec3 velocity;
     double mass;
+    size_t id;
 };
 
 export class GravitySimulation {
@@ -43,16 +45,22 @@ export class GravitySimulation {
         }
 
         auto runSimulation(std::stop_token stop) {
+            tracy::SetThreadName("Simulation");
             using clock = std::chrono::steady_clock;
             const auto step = std::chrono::duration_cast<clock::duration>(
                 std::chrono::duration<double>(dt));
 
             auto next_update = clock::now();
             while(!stop.stop_requested()){
-                update(dt);
+                {
+                    ZoneScopedN("Simulation Update");
+                    update(dt);
+                }
             
                 next_update += step;
+         
                 std::this_thread::sleep_until(next_update);
+                
 
                 if (clock::now() > next_update + step) next_update = clock::now();
             }
@@ -76,12 +84,12 @@ export class GravitySimulation {
 
                     }
                 }
-                objects.velocites[pos1] += accel_gravity * dt;
+                objects.velocites[pos1] += accel_gravity * dt * rateOfTime;
            } 
            for (size_t i = 0; i < num_of_objects; i++)
            {
            
-                objects.positions[i] += objects.velocites[i] * dt;
+                objects.positions[i] += objects.velocites[i] * dt * rateOfTime;
            }
         }
 
@@ -91,6 +99,9 @@ export class GravitySimulation {
         }
         auto getSimulationHz() const -> double {return simulation_hz; }
         auto getSimulationObjectCount() const -> size_t {return num_of_objects; }
+        auto getSimulationSpeed() const -> double {return rateOfTime; }
+        auto setSimulationSpeed(double newRate) -> void {std::scoped_lock lock(objects_mutex); rateOfTime = newRate;  }
+
 
         /* id is position in the objects array. Note this requires obtaining a mutex lock,
             so use this function sparingly
@@ -101,7 +112,8 @@ export class GravitySimulation {
             return SimulationObject {
                 objects.positions[objectPos],
                 objects.velocites[objectPos],
-                objects.masses[objectPos]
+                objects.masses[objectPos],
+                objectPos
             };
         }
 
@@ -110,6 +122,7 @@ export class GravitySimulation {
         std::mutex objects_mutex;
         double simulation_hz = 60.0;
         double dt = 1.0 / simulation_hz;
+        double rateOfTime = 1.0;
         ObjectData objects;
 
 };

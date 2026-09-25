@@ -9,6 +9,7 @@ module;
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 #include <imgui.h>
+#include <tracy/Tracy.hpp>
 
 #include "SDL3/SDL_error.h"
 #include "SDL3/SDL_vulkan.h"
@@ -173,10 +174,12 @@ export class VulkanRenderer{
    
 
         auto waitIdle() -> void {
+            ZoneScopedN("Wait idle");
             device.waitIdle();
         }
 
         auto recreateSwapChain() -> void {
+            ZoneScopedN("Recreate swap chain");
             waitIdle();
 
             cleanupSwapChain();
@@ -259,6 +262,7 @@ export class VulkanRenderer{
     requires std::is_trivially_copyable_v<T>
     auto updateStorageBuffer( const Buffer &buffer, std::span<const T> data, u32 currentFrame, size_t bufferSize) -> void 
     {
+        ZoneScopedN("Update storage buffer");
         if (currentFrame >= buffer.buffersMapped.size())
         {
             throw std::out_of_range("Invalid frame index");
@@ -352,50 +356,64 @@ export class VulkanRenderer{
     
         
         auto drawFrame(std::span<DrawSubmission> const& drawCalls, ImDrawData* drawData) -> void {
-            auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
-		    if (fenceResult != vk::Result::eSuccess)
-		    {
-			    throw std::runtime_error("failed to wait for fence!");
-		    }
-		    device.resetFences(*inFlightFences[frameIndex]);
-
-            auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
-            if (result == vk::Result::eErrorOutOfDateKHR)
+            ZoneScopedN("Draw Frame");
             {
-                recreateSwapChain();
-                return;
-            }
-            if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR)
-            {
-                assert(result == vk::Result::eTimeout || result == vk::Result::eNotReady);
-                throw std::runtime_error("Failed to acquire swap chain image!");
+                ZoneScopedN("Wait for fence");
+                auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
+		        if (fenceResult != vk::Result::eSuccess)
+		        {
+			        throw std::runtime_error("failed to wait for fence!");
+		        }   
+		        device.resetFences(*inFlightFences[frameIndex]);
             }
 
-            device.resetFences(*inFlightFences[frameIndex]);
+            
+                auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
 
-          
-            for (auto draw : drawCalls)
-            {
-                UniformBufferObject cameraUBO = {};
-                cameraUBO.proj = draw.proj;
-                cameraUBO.view = draw.view;
-
-                updateUniformBuffer(cameraUBO, draw.uniformBuffer, frameIndex);
-
-                updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceBuffer.bufferSize);
-                updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, draw.lightBuffer.bufferSize);
-
-            }
-      
+                if (result == vk::Result::eErrorOutOfDateKHR)
+                {
+                    recreateSwapChain();
+                    return;
+                }
+                if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR)
+                {
+                    assert(result == vk::Result::eTimeout || result == vk::Result::eNotReady);
+                    throw std::runtime_error("Failed to acquire swap chain image!");
+                }
             
 
+                device.resetFences(*inFlightFences[frameIndex]);
+            
+
+            {
+                ZoneScopedN("Handle Draw Calls")
+                for (auto draw : drawCalls)
+                {
+                    UniformBufferObject cameraUBO = {};
+                    cameraUBO.proj = draw.proj;
+                    cameraUBO.view = draw.view;
+                    {
+                        ZoneScopedN("Update Uniform Buffer");
+                        updateUniformBuffer(cameraUBO, draw.uniformBuffer, frameIndex);
+                    }
+
+                    {
+                        ZoneScopedN("Update storage buffers");
+                        updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceBuffer.bufferSize);
+                        updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, draw.lightBuffer.bufferSize);
+                    }
+
+                }
+            }
+      
             commandBuffers[frameIndex].reset();
             recordCommandBuffer(drawCalls, drawData, imageIndex );
 
-            graphicsQueue.waitIdle();
-
+            {
+                ZoneScopedN("GraphicsQueue wait idle");
+                graphicsQueue.waitIdle();  
+            }
            
-
             vk::PipelineStageFlags waitDestinationStageMask( vk::PipelineStageFlagBits::eColorAttachmentOutput );
             vk::SubmitInfo   submitInfo = {};
             submitInfo.setWaitSemaphoreCount(1)
@@ -406,7 +424,10 @@ export class VulkanRenderer{
             .setSignalSemaphoreCount(1)
             .setPSignalSemaphores(&*renderFinishedSemaphores[imageIndex]);
 
-            graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
+            {
+                ZoneScopedN("Submit graphics info");
+                graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
+            }
 
             vk::PresentInfoKHR PresentInfoKHR = {};
             PresentInfoKHR.setWaitSemaphoreCount(1)
@@ -415,7 +436,11 @@ export class VulkanRenderer{
             .setPSwapchains(&*swapChain)
             .setPImageIndices(&imageIndex);
         
-            result = graphicsQueue.presentKHR(PresentInfoKHR);
+            {
+                ZoneScopedN("Graphics queue present KHR")
+                    
+                result = graphicsQueue.presentKHR(PresentInfoKHR);
+            }
             if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || window->isFramebufferResized())
             {
                 window->setFramebufferResized(false);
@@ -516,6 +541,7 @@ export class VulkanRenderer{
 
     auto recordCommandBuffer(std::span<DrawSubmission> drawCalls,  ImDrawData* imguiDraw, u32 imageIndex) -> void
     {
+        ZoneScopedN("Record Command Buffer");
         auto &commandBuffer = commandBuffers[frameIndex];
         commandBuffer.begin({});
         transition_image_layout(
@@ -583,7 +609,7 @@ export class VulkanRenderer{
 
         for (auto const& draw : drawCalls)
         {
-            
+            ZoneScopedN("Handle draw calls");
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.pipeline);
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 0, *draw.descriptorSets.frameSets[frameIndex], nullptr);         
@@ -605,7 +631,10 @@ export class VulkanRenderer{
             commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
             
         }
-      ImGui_ImplVulkan_RenderDrawData(imguiDraw, *commandBuffer);
+        {
+            ZoneScopedN("ImGUI Render Draw data");
+            ImGui_ImplVulkan_RenderDrawData(imguiDraw, *commandBuffer);
+        }
         
 
         commandBuffer.endRendering();
@@ -989,6 +1018,7 @@ export class VulkanRenderer{
     }
 
     auto cleanupSwapChain() -> void {
+        ZoneScopedN("Cleanup swapchain");
         swapChainImageViews.clear();
         
         depthImageView = nullptr;
@@ -1076,6 +1106,7 @@ export class VulkanRenderer{
   
 
     auto updateUniformBuffer( UniformBufferObject& uniformBufferObject, const Buffer& ubo, u32 frameIndex) -> void {
+        
         memcpy(ubo.buffersMapped[frameIndex], &uniformBufferObject, sizeof(UniformBufferObject));
     }
 

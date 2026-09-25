@@ -6,7 +6,6 @@ module;
 #include "SDL3/SDL_mouse.h"
 #include "SDL3/SDL_scancode.h"
 #include "imgui_impl_sdl3.h"
-#include <print>
 export module event;
 import window;
 import logger;
