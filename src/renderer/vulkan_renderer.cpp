@@ -59,6 +59,7 @@ export struct Buffer {
 export struct UniformBufferObject {
     glm::mat4 view;
     glm::mat4 proj;
+    glm::vec4 cameraPosition;
 };
 
 export struct Light {
@@ -119,6 +120,7 @@ export struct DrawSubmission {
     PushConstant pushConstant;
     glm::mat4 proj;
     glm::mat4 view;
+    glm::vec3 cameraPosition;
 
     u32 indexCount, instanceCount;
 };
@@ -392,6 +394,7 @@ export class VulkanRenderer{
                     UniformBufferObject cameraUBO = {};
                     cameraUBO.proj = draw.proj;
                     cameraUBO.view = draw.view;
+                    cameraUBO.cameraPosition = glm::vec4(draw.cameraPosition, 1.0f);
                     {
                         ZoneScopedN("Update Uniform Buffer");
                         updateUniformBuffer(cameraUBO, draw.uniformBuffer, frameIndex);
@@ -575,7 +578,7 @@ export class VulkanRenderer{
       vk::ImageAspectFlagBits::eColor);
 
         vk::ClearValue  clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
-        vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+        vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
        vk::RenderingAttachmentInfo attachmentInfo = {};
        attachmentInfo.
        setImageView(colorImageView)
@@ -1341,7 +1344,7 @@ export class PipelineBuilder {
             pipelineConfig.depthStencil.setDepthTestEnable(state)
             // Depth writes are disabled whenever depth testing is disabled
             .setDepthWriteEnable(vk::True)
-            .setDepthCompareOp(vk::CompareOp::eLess)
+            .setDepthCompareOp(vk::CompareOp::eGreater)
             .setDepthBoundsTestEnable(vk::False);
             return *this;
         }

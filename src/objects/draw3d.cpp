@@ -141,9 +141,14 @@ export class Draw3D {
 
         Mesh& sphere = meshes[PrimitiveType::SPHERE];
         std::vector<Light> lights;
-        lights.emplace_back(glm::vec3(0.0, -5.0, 0.0), glm::vec3(0.8));
+        lights.emplace_back(glm::vec3(0.0, -5.0, 0.0) - camera.getPosition(), 
+        glm::vec3(0.8));
         
         std::vector<DrawSubmission> drawCalls;
+
+        // undo camera translations
+        glm::mat4 view = camera.getViewMatrix();
+        view[3] = glm::vec4(0.0, 0.0, 0.0, 1.0);
 
        
         drawCalls.emplace_back(
@@ -158,7 +163,8 @@ export class Draw3D {
             descriptorSets,
             std::monostate(),
             camera.getProjMatrix(),
-            camera.getViewMatrix(),
+            view,
+            camera.getPosition(),
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
             
@@ -177,7 +183,8 @@ export class Draw3D {
             descriptorSets,
             quadInstanceData[0].model,
             camera.getProjMatrix(),
-            camera.getViewMatrix(),
+            view,
+            camera.getPosition(),
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())
            

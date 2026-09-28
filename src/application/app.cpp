@@ -49,6 +49,8 @@ export class Application {
 
             imguiSetup(window.getSDLWindow());
 
+            
+
             }
   
 
@@ -61,7 +63,7 @@ export class Application {
             f64 accum = 0.0;
             f64 fps = 0.0;
             float dt = 0.0;
-            
+            int hrs = 0, minutes = 0, seconds = 1;
            while (window.isWindowOpen())
             {
                
@@ -83,9 +85,10 @@ export class Application {
                 ImGui::NewFrame();
                 ImGui::Begin("Application Info");
                 ImGui::Text("FPS (%u samples): %0.1f", SAMPLES, fps);
+                ImGui::Text("Zoom: %f meters", camera_controller.getActiveCamera()->getZoom() );
                 ImGui::End();
 
-                 int hrs = 0, minutes = 0, seconds = 0;
+                 
                 ImGui::Begin("Simulation Info");
                 ImGui::Text("Simulation Frequnecy: %0.1lf hz", simulation.getSimulationHz());
                 ImGui::Text("Simulation Speed: %lf / s", simulation.getSimulationSpeed());
@@ -113,13 +116,16 @@ export class Application {
                 draw.startDraw();
                 {
                     ZoneScopedN("Draw submission");
-                    for (const auto object : simulation.getObjectPositions())
+                    for (size_t i = 0; i < simulation.getSimulationObjectCount(); i++)
                     {
-                        draw.drawSphere(object, 1.0);
+                        
+                        SimulationObject object = simulation.getObjectFromId(i);
+                        
+                        draw.drawSphere(object.position, object.radius);
                     }
                 }
                 // Draws the grid
-                draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f));
+                draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f + camera_controller.getActiveCamera()->getZoom()));
                 draw.endDraw(*camera_controller.getActiveCamera());
                 
 
@@ -223,16 +229,18 @@ export class Application {
             auto nearPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 0.0));
             auto farPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 1.0));
 
-            auto const& objectData = simulation.getObjectPositions(); 
+            
 
             for (size_t i = 0; i < simulation.getSimulationObjectCount(); i++)
             {
              
+                auto const& objectData = simulation.getObjectFromId(i); 
+
                 const float discrim = 
                 raycast.testRayOnSphere(
                     Ray(nearPoint, farPoint), 
-                    static_cast<glm::vec3>(objectData[i]), 
-                    1.0);
+                    objectData.position, 
+                    objectData.radius);
                   
                 if (discrim >= 0)
                 {
@@ -256,6 +264,7 @@ export class Application {
 
         auto screenSpaceToWorldCoordinates(glm::vec3 screenCoordinates) -> const glm::vec3 {
            
+            
             return glm::unProject(screenCoordinates,
             camera_controller.getActiveCamera()->getViewMatrix(),
             camera_controller.getActiveCamera()->getProjMatrix(), 

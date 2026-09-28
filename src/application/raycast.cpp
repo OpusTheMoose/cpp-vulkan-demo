@@ -4,10 +4,10 @@ export module raycast;
 import types;
 
 export struct Ray {
-    glm::vec3 start;
-    glm::vec3 end;
-    glm::vec3 raydir;
-    Ray(glm::vec3 start_, glm::vec3 end_) {
+    glm::dvec3 start;
+    glm::dvec3 end;
+    glm::dvec3 raydir;
+    Ray(glm::dvec3 start_, glm::dvec3 end_) {
         start = start_;
         end = end_;
         raydir = glm::normalize(end - start);
@@ -20,7 +20,7 @@ export class Raycast {
     public:
     Raycast() {};
 
-    auto testRayOnSphere(Ray ray, glm::vec3 spherePosition, float radius )
+    auto testRayOnSphere(Ray ray, glm::dvec3 spherePosition, float radius )
     {
         auto const distance_from_sphere = ray.start - spherePosition;
           return 

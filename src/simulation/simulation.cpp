@@ -20,12 +20,14 @@ struct ObjectData {
     std::array<glm::dvec3, num_of_objects> positions;
     std::array<glm::dvec3, num_of_objects> velocites;
     std::array<double, num_of_objects> masses;
+    std::array<double, num_of_objects> radius;
 };
 // Single version of ObjectData, just a non-owning view of a single piece of simulation data
 export struct SimulationObject {
     glm::dvec3 position;
     glm::dvec3 velocity;
     double mass;
+    double radius;
     size_t id;
 };
 
@@ -33,13 +35,18 @@ export class GravitySimulation {
     public:
         GravitySimulation(){
             objects.positions[0] = glm::dvec3{0.0, 0.0, 0.0};
-            objects.positions[1] = glm::vec3{0.0, 0.0, 5.0};
+            objects.positions[1] = glm::dvec3{0.0, 0.0, 363300000};
 
             objects.velocites[0] = glm::dvec3(0.0, 0.0, 0.0);
             objects.velocites[1] = glm::dvec3{0.0, 0.0, 0.0};
 
-            objects.masses[0] = 100;
-            objects.masses[1] = 10;
+            objects.masses[0] = 5.972e24; // Mass of earth
+            objects.masses[1] = 7.348e22; // Mass of moon
+
+
+            objects.radius[0] = 6371;
+            objects.radius[1] = 1738;
+            
 
 
         }
@@ -113,6 +120,7 @@ export class GravitySimulation {
                 objects.positions[objectPos],
                 objects.velocites[objectPos],
                 objects.masses[objectPos],
+                objects.radius[objectPos],
                 objectPos
             };
         }

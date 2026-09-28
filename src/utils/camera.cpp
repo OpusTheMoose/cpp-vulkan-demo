@@ -1,6 +1,7 @@
 module;
 
 #include <cassert>
+#include <cmath>
 #include <glm/ext/vector_float3_precision.hpp>
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/ext/matrix_clip_space.hpp>
@@ -9,6 +10,7 @@ module;
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
 #include <glm/trigonometric.hpp>
+#include <print>
 #include <string_view>
 #include <unordered_map>
 #include <string>
@@ -39,7 +41,7 @@ export class Camera {
             this->center = center;
             this->label = label;
             view = glm::lookAt(pos, center, glm::vec3(0.0, 1.0 , 0.0));
-            proj = glm::perspective(glm::radians(45.0f), screen_size.x / screen_size.y, 0.1f, 100.0f);
+            proj = glm::perspectiveRH_ZO(glm::radians(45.0f), screen_size.x / screen_size.y, nearPlane, farPlane);
             proj[1][1] *= -1; // Flip Y for vulkan
 
             
@@ -50,14 +52,18 @@ export class Camera {
     auto getProjMatrix() ->  glm::mat4 {
         return proj;
     }
+  
     auto zoom(const float zoomAmount) -> void {
      
         constexpr float minRadius = 0.1;
-        constexpr float maxRadius = 200.0f;
+        constexpr float maxRadius = 1e9f;
        //Flip so scroll up is zoom in
        float factor = std::exp(zoomAmount * -1);
        radius *= factor;
        radius = glm::clamp(radius, minRadius, maxRadius);
+    }
+    auto getZoom() const -> float {
+        return radius;
     }
 
      auto getEye() const {
@@ -68,13 +74,16 @@ export class Camera {
 
         return glm::vec3(x, y, z);
     }
-
+      auto getPosition() const -> glm::vec3 {
+        return getEye();
+    }
     auto update(const glm::vec2 screen_size)-> void
     {
-        // view = glm::lookAt(pos, lookat, glm::vec3(0.0, 0.0 , 1.0));
+     
         view = glm::lookAt(getEye(), center, glm::vec3(0.0, 1.0, 0.0));
-        proj = glm::perspective(glm::radians(45.0f), static_cast<float>(screen_size.x) / static_cast<float>(screen_size.y), 0.1f, 100.0f);
+        proj = glm::perspectiveRH_ZO(glm::radians(45.0f), static_cast<float>(screen_size.x) / static_cast<float>(screen_size.y), nearPlane, farPlane);
         proj[1][1] *= -1; // Flip Y for vulkan
+
     }
 
     auto getLabel() -> std::string_view
@@ -114,6 +123,9 @@ export class Camera {
         glm::mat4 proj;
         glm::vec3 pos;
         glm::vec3 center;
+
+        float nearPlane = 1.0e9f;
+        float farPlane = 0.1f;
 
         float azimuthAngle = 0.0f;
         float polarAngle = glm::radians(45.0f);
@@ -164,7 +176,8 @@ export class CameraController {
             }
             if (events.isKeyPressed("left shift") && mouse.isMiddleButtonPressed())
             {
-                constexpr float move_sens = 0.01f;
+                // Tie how far left/right we move to our zoom level
+                float move_sens = cam->getZoom() * 0.0005f;
                 auto const delta_x = mouse.mouse_x - mouse.prev_mouse_x;
                 auto const delta_y = mouse.mouse_y - mouse.prev_mouse_y;
 
