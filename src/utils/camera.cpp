@@ -41,7 +41,10 @@ export class Camera {
             this->center = center;
             this->label = label;
             view = glm::lookAt(pos, center, glm::vec3(0.0, 1.0 , 0.0));
-            proj = glm::perspectiveRH_ZO(glm::radians(45.0f), screen_size.x / screen_size.y, nearPlane, farPlane);
+            proj = glm::perspectiveRH_ZO(glm::radians(45.0f), 
+                                        screen_size.x / screen_size.y, 
+                                        static_cast<float>(nearPlane), 
+                                        static_cast<float>(farPlane));
             proj[1][1] *= -1; // Flip Y for vulkan
 
             
@@ -80,8 +83,11 @@ export class Camera {
     auto update(const glm::vec2 screen_size)-> void
     {
      
-        view = glm::lookAt(getEye(), center, glm::vec3(0.0, 1.0, 0.0));
-        proj = glm::perspectiveRH_ZO(glm::radians(45.0f), static_cast<float>(screen_size.x) / static_cast<float>(screen_size.y), nearPlane, farPlane);
+        view = glm::lookAt(getEye(), static_cast<glm::vec3>(center), glm::vec3(0.0, 1.0, 0.0));
+        proj = glm::perspectiveRH_ZO(glm::radians(45.0f), 
+        static_cast<float>(screen_size.x) / static_cast<float>(screen_size.y), 
+        static_cast<float>(nearPlane), 
+        static_cast<float>(farPlane));
         proj[1][1] *= -1; // Flip Y for vulkan
 
     }
@@ -121,11 +127,11 @@ export class Camera {
         std::string label;
         glm::mat4 view;
         glm::mat4 proj;
-        glm::vec3 pos;
-        glm::vec3 center;
+        glm::dvec3 pos;
+        glm::dvec3 center;
 
-        float nearPlane = 1.0e9f;
-        float farPlane = 0.1f;
+        double nearPlane = 1.0e12f;
+        double farPlane = 0.1f;
 
         float azimuthAngle = 0.0f;
         float polarAngle = glm::radians(45.0f);

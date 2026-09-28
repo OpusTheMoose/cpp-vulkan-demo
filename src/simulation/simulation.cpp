@@ -44,8 +44,8 @@ export class GravitySimulation {
             objects.masses[1] = 7.348e22; // Mass of moon
 
 
-            objects.radius[0] = 6371;
-            objects.radius[1] = 1738;
+            objects.radius[0] = 6371000;
+            objects.radius[1] = 1738000;
             
 
 

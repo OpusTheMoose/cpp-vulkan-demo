@@ -1,6 +1,7 @@
 module;
 #include "SDL3/SDL_video.h"
 #include <glm/ext/matrix_projection.hpp>
+#include <glm/ext/vector_double3.hpp>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/geometric.hpp>
 #include <glm/glm.hpp>
@@ -41,7 +42,7 @@ export class Application {
                         })
             {
            camera_controller.registerCamera(
-            Camera(glm::vec3(2.0f, 2.0f, 2.0f), 
+            Camera(glm::vec3(0.0f, 0.0f, 0.0f), 
             glm::vec3(0.0f, 0.0f, 0.0f), 
             glm::vec2(800.0, 600.0), 
             "OrbitCamera"))
@@ -121,11 +122,11 @@ export class Application {
                         
                         SimulationObject object = simulation.getObjectFromId(i);
                         
-                        draw.drawSphere(object.position, object.radius);
+                        draw.drawSphere(object.position - static_cast<glm::dvec3>(camera_controller.getActiveCamera()->getPosition()) , object.radius);
                     }
                 }
                 // Draws the grid
-                draw.drawQuad(glm::vec3(0.0, 0.0, 0.0), glm::vec3(50.0f + camera_controller.getActiveCamera()->getZoom()));
+                draw.drawQuad(glm::vec3(0.0, 0.0, 0.0) - camera_controller.getActiveCamera()->getPosition(), glm::vec3(50.0f + camera_controller.getActiveCamera()->getZoom()));
                 draw.endDraw(*camera_controller.getActiveCamera());
                 
 
@@ -133,7 +134,7 @@ export class Application {
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
                 camera_controller.getActiveCamera()->update(glm::vec2(w, h));
                 camera_controller.updateActiveCamera(event_manager);
-
+               
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
                 accum += dt;

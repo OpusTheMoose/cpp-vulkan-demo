@@ -7,8 +7,7 @@ struct VSInput {
 
 struct UniformBuffer { 
     float4x4 view;
-    float4x4 proj;
-    float4 cameraPosition;
+    float4x4 proj; 
 };
 
 struct Light {
@@ -51,10 +50,9 @@ VSOutput vertMain(VSInput input, uint instanceId: SV_InstanceID) {
     );
 
     float3 worldPosition = mul(model, float4(input.inPosition, 1.0)).xyz;
-    float3 cameraRelativePosition = worldPosition - ubo.cameraPosition.xyz;
 
-    output.pos = mul(ubo.proj, mul(ubo.view, float4(cameraRelativePosition, 1.0)));
-    output.worldPos = cameraRelativePosition;
+    output.pos = mul(ubo.proj, mul(ubo.view, float4(worldPosition, 1.0)));
+    output.worldPos = worldPosition;
     output.color = input.inColor;
     output.normal =  mul(normalMatrix, input.inNormal);
     return output;

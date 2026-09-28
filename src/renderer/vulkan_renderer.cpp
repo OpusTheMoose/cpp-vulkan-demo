@@ -58,8 +58,7 @@ export struct Buffer {
 };
 export struct UniformBufferObject {
     glm::mat4 view;
-    glm::mat4 proj;
-    glm::vec4 cameraPosition;
+    glm::mat4 proj; 
 };
 
 export struct Light {
@@ -393,8 +392,7 @@ export class VulkanRenderer{
                 {
                     UniformBufferObject cameraUBO = {};
                     cameraUBO.proj = draw.proj;
-                    cameraUBO.view = draw.view;
-                    cameraUBO.cameraPosition = glm::vec4(draw.cameraPosition, 1.0f);
+                    cameraUBO.view = draw.view; 
                     {
                         ZoneScopedN("Update Uniform Buffer");
                         updateUniformBuffer(cameraUBO, draw.uniformBuffer, frameIndex);

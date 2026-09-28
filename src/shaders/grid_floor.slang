@@ -8,7 +8,7 @@ struct VSInput {
 struct UniformBuffer { 
     float4x4 view;
     float4x4 proj;
-    float4 cameraPosition; 
+  //  float4 worldPosition; 
 };
 
 
@@ -33,9 +33,9 @@ VSOutput vertMain(VSInput input) {
 
     VSOutput output;
     float3 worldPosition = mul(pc.model, float4(input.inPosition, 1.0)).xyz;
-    float3 cameraRelativePos = worldPosition - ubo.cameraPosition.xyz;
+  //  float3 cameraRelativePos = worldPosition - ubo.cameraPosition.xyz;
 
-    output.pos = mul(ubo.proj, mul(ubo.view, float4(cameraRelativePos, 1.0)));
+    output.pos = mul(ubo.proj, mul(ubo.view, float4(worldPosition, 1.0)));
     output.uv = input.inTexCoords;
     return output;
 }
