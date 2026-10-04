@@ -86,7 +86,7 @@ export class Application {
                 ImGui::NewFrame();
                 ImGui::Begin("Application Info");
                 ImGui::Text("FPS (%u samples): %0.1f", SAMPLES, fps);
-                ImGui::Text("Zoom: %f meters", camera_controller.getActiveCamera()->getZoom() );
+                ImGui::Text("Zoom: %.1f meters", camera_controller.getActiveCamera()->getZoom() );
                 ImGui::End();
 
                  
@@ -229,7 +229,10 @@ export class Application {
             auto mouse = event_manager.getMouseState(); 
             auto nearPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 0.0));
             auto farPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 1.0));
-
+            const auto cameraPos = camera_controller.getActiveCamera()->getPosition();
+            // convert to in-camera coords
+            nearPoint -= cameraPos;
+            farPoint -= cameraPos;
             
 
             for (size_t i = 0; i < simulation.getSimulationObjectCount(); i++)

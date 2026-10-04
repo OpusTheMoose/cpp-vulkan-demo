@@ -23,8 +23,11 @@ struct Instances {
 [[vk::binding(0,0 )]]
 ConstantBuffer<UniformBuffer> ubo;
 
-[[vk::binding(0, 2)]]
+[[vk::binding(0, 1)]]
 StructuredBuffer<Light> lights;
+
+[[vk::binding(0, 2)]]
+Sampler2D textureSampler;
 
 [[vk::binding(0, 3)]]
 StructuredBuffer<Instances> instanceModels;

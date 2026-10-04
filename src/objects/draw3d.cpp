@@ -40,18 +40,20 @@ export class Draw3D {
             {
                e = renderer.createStorageBuffer(sizeof(InstanceData) * 1000);
             }
+            //temporary
+            Texture texture("textures/2k_mercury.jpg");
+            renderer.uploadTextureVulkan(texture);
 
             lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
-            // Create uniform buffers BEFORE descriptor sets!!
             uniformBuffer = renderer.createUniformBuffers(sizeof(UniformBufferObject));
-
             passBuffer = renderer.createStorageBuffer(8); // just pass some bs
 
             // Per frame
             this->descriptorSets.layouts[0] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eUniformBuffer);
-            this->descriptorSets.layouts[1] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eStorageBuffer);
+            // per pass
+            this->descriptorSets.layouts[1] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eStorageBuffer);
             // per material
-            this->descriptorSets.layouts[2] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eStorageBuffer);
+            this->descriptorSets.layouts[2] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eCombinedImageSampler);
             // Per object
             this->descriptorSets.layouts[3] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eStorageBuffer);
 
@@ -62,9 +64,10 @@ export class Draw3D {
             this->descriptorSets.instanceSets = renderer.allocateDescriptorSets(descriptorSets.layouts[3], FRAMES_IN_FLIGHT);
 
             for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
-                renderer.updateDescriptorSet( FRAME, descriptorSets.frameSets[frame], uniformBuffer, frame);
-                renderer.updateDescriptorSet( MATERIAL, descriptorSets.materialSets[frame], lightBuffer, frame);
-                renderer.updateDescriptorSet( OBJECT,   descriptorSets.instanceSets[frame],    instanceBuffers[PrimitiveType::SPHERE], frame);  
+                renderer.updateFrameSet(descriptorSets.frameSets[frame], uniformBuffer, frame);
+                renderer.updatePassSet(descriptorSets.passSets[frame], passBuffer, frame);
+                renderer.updateMaterialSet(descriptorSets.materialSets[frame], texture.textureBuffer, texture);
+                renderer.updateObjectSet(descriptorSets.instanceSets[frame], instanceBuffers[PrimitiveType::SPHERE], frame);
             }
             const std::array<vk::DescriptorSetLayout, 4> pipelineSetLayouts {
                 *this->descriptorSets.layouts[0],
@@ -370,8 +373,7 @@ export class Draw3D {
     // Buffers for each frame in flight
     Buffer lightBuffer; 
     Buffer passBuffer; // UNUSED (for now aga)
-    Buffer uniformBuffer;
-    
+    Buffer uniformBuffer;    
 
     std::vector<LineVertex> lineVertices;
     std::vector<u16> lineIndices;    
