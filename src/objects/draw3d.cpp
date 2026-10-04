@@ -34,14 +34,13 @@ export enum PrimitiveType {
 
 export class Draw3D {
     public:
-        Draw3D(VulkanRenderer &renderer_) : renderer(renderer_), pipelineBuilder(renderer) {
+        Draw3D(VulkanRenderer &renderer_) : renderer(renderer_), pipelineBuilder(renderer), texture("textures/2k_mercury.jpg") {
 
             for (auto &e : instanceBuffers)
             {
                e = renderer.createStorageBuffer(sizeof(InstanceData) * 1000);
             }
-            //temporary
-            Texture texture("textures/2k_mercury.jpg");
+
             renderer.uploadTextureVulkan(texture);
 
             lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
@@ -373,7 +372,9 @@ export class Draw3D {
     // Buffers for each frame in flight
     Buffer lightBuffer; 
     Buffer passBuffer; // UNUSED (for now aga)
-    Buffer uniformBuffer;    
+    Buffer uniformBuffer;   
+    
+    Texture texture; // temporary, for testing
 
     std::vector<LineVertex> lineVertices;
     std::vector<u16> lineIndices;    

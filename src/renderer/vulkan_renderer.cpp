@@ -678,8 +678,9 @@ export class VulkanRenderer{
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.pipeline);
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 0, *draw.descriptorSets.frameSets[frameIndex], nullptr);         
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 2, *draw.descriptorSets.materialSets[frameIndex], nullptr);         
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 1, *draw.descriptorSets.passSets[frameIndex], nullptr); 
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 2, *draw.descriptorSets.materialSets[frameIndex], nullptr);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 1, *draw.descriptorSets.passSets[frameIndex], nullptr);         
+               
 
             // Deduce type of push constant, if there is one
             std::visit([&](auto& arg)
@@ -1184,7 +1185,7 @@ export class VulkanRenderer{
     }
 
     auto createDescriptorPool() -> void {
-         std::array<vk::DescriptorPoolSize, 4> poolSizes = {
+         std::array<vk::DescriptorPoolSize, 5> poolSizes = {
         vk::DescriptorPoolSize{
             vk::DescriptorType::eUniformBuffer,
             FRAMES_IN_FLIGHT
@@ -1200,11 +1201,15 @@ export class VulkanRenderer{
         vk::DescriptorPoolSize{
             vk::DescriptorType::eSampledImage,
             100
+        },
+        vk::DescriptorPoolSize{
+            vk::DescriptorType::eSampler,
+            100
         }
         };
         vk::DescriptorPoolCreateInfo poolInfo;
         poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-        .setMaxSets(FRAMES_IN_FLIGHT * 4 + 100)
+        .setMaxSets(FRAMES_IN_FLIGHT * 10)
         .setPoolSizeCount(static_cast<uint32_t>(poolSizes.size()))
         .setPPoolSizes(poolSizes.data());
 

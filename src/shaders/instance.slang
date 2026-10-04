@@ -37,6 +37,7 @@ struct VSOutput {
     float3 worldPos;
     float3 normal;
     float3 color;
+    float2 texCoords;
 }
 
 
@@ -58,6 +59,7 @@ VSOutput vertMain(VSInput input, uint instanceId: SV_InstanceID) {
     output.worldPos = worldPosition;
     output.color = input.inColor;
     output.normal =  mul(normalMatrix, input.inNormal);
+    output.texCoords = input.inTexCoords;
     return output;
 }
 
@@ -78,7 +80,7 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
     float3 specular = 0.5 * spec * lights[0].color;
 
 
-    float3 result = (ambient + diffuse + specular) * vertIn.color;
+    float3 result = (ambient + diffuse + specular) * textureSampler.Sample(vertIn.texCoords).xyz;
 
 
     return float4(result, 1.0);
