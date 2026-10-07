@@ -100,8 +100,9 @@ add_executable(game main.cpp )
 target_sources(game PUBLIC FILE_SET CXX_MODULES FILES  src/utils/types.cpp  src/window/window.cpp src/utils/logger.cpp src/window/event.cpp src/application/app.cpp
 src/renderer/vulkan_renderer.cpp src/utils/file.cpp src/objects/vertex.cpp src/objects/mesh.cpp src/utils/camera.cpp  src/objects/draw3d.cpp src/simulation/simulation.cpp 
 src/application/raycast.cpp )
+target_sources(game PUBLIC src/renderer/spirv_reflect.cpp)
+target_compile_definitions(game PRIVATE SPIRV_REFLECT_USE_SYSTEM_SPIRV_H)
 target_compile_options(game PRIVATE -Wall -Wextra -Wpedantic -Werror  -g -O3 )
-target_compile_definitions(game PRIVATE TRACY_ENABLE)
         
 
 target_link_libraries(imgui PUBLIC SDL3::SDL3 Vulkan::Vulkan)

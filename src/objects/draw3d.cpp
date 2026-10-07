@@ -45,35 +45,30 @@ export class Draw3D {
 
             lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
             uniformBuffer = renderer.createUniformBuffers(sizeof(UniformBufferObject));
-            passBuffer = renderer.createStorageBuffer(8); // just pass some bs
+            passBuffer = renderer.createStorageBuffer(8); 
 
-            // Per frame
-            this->descriptorSets.layouts[0] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eUniformBuffer);
-            // per pass
-            this->descriptorSets.layouts[1] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eStorageBuffer);
-            // per material
-            this->descriptorSets.layouts[2] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eCombinedImageSampler);
-            // Per object
-            this->descriptorSets.layouts[3] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eStorageBuffer);
+            // // Per frame
+            // this->descriptorSets.layouts[0] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eUniformBuffer);
+            // // per pass
+            // this->descriptorSets.layouts[1] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eStorageBuffer);
+            // // per material
+            // this->descriptorSets.layouts[2] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eFragment, vk::DescriptorType::eCombinedImageSampler);
+            // // Per object
+            // this->descriptorSets.layouts[3] = renderer.createDescriptorSetLayout(vk::ShaderStageFlagBits::eVertex, vk::DescriptorType::eStorageBuffer);
 
 
-            this->descriptorSets.frameSets = renderer.allocateDescriptorSets(descriptorSets.layouts[0], FRAMES_IN_FLIGHT);
-            this->descriptorSets.passSets = renderer.allocateDescriptorSets(descriptorSets.layouts[1], FRAMES_IN_FLIGHT);
-            this->descriptorSets.materialSets = renderer.allocateDescriptorSets(descriptorSets.layouts[2], FRAMES_IN_FLIGHT);
-            this->descriptorSets.instanceSets = renderer.allocateDescriptorSets(descriptorSets.layouts[3], FRAMES_IN_FLIGHT);
+            // this->descriptorSets.frameSets = renderer.allocateDescriptorSets(descriptorSets.layouts[0], FRAMES_IN_FLIGHT);
+            // this->descriptorSets.passSets = renderer.allocateDescriptorSets(descriptorSets.layouts[1], FRAMES_IN_FLIGHT);
+            // this->descriptorSets.materialSets = renderer.allocateDescriptorSets(descriptorSets.layouts[2], FRAMES_IN_FLIGHT);
+            // this->descriptorSets.instanceSets = renderer.allocateDescriptorSets(descriptorSets.layouts[3], FRAMES_IN_FLIGHT);
 
-            for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
-                renderer.updateFrameSet(descriptorSets.frameSets[frame], uniformBuffer, frame);
-                renderer.updatePassSet(descriptorSets.passSets[frame], passBuffer, frame);
-                renderer.updateMaterialSet(descriptorSets.materialSets[frame], texture.textureBuffer, texture);
-                renderer.updateObjectSet(descriptorSets.instanceSets[frame], instanceBuffers[PrimitiveType::SPHERE], frame);
-            }
-            const std::array<vk::DescriptorSetLayout, 4> pipelineSetLayouts {
-                *this->descriptorSets.layouts[0],
-                *this->descriptorSets.layouts[1],
-                *this->descriptorSets.layouts[2],
-                *this->descriptorSets.layouts[3]
-            };
+            
+            // const std::array<vk::DescriptorSetLayout, 4> pipelineSetLayouts {
+            //     *this->descriptorSets.layouts[0],
+            //     *this->descriptorSets.layouts[1],
+            //     *this->descriptorSets.layouts[2],
+            //     *this->descriptorSets.layouts[3]
+            // };
             
             TEMP_PIPELINE = pipelineBuilder
             .setColorAttachmentFormats(std::array{renderer.getSwapSurfaceFormat().format})
@@ -106,25 +101,32 @@ export class Draw3D {
             .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
             .setViewportState(1, 1)
             .setMultisampleShading(false)
-            .setPipelineSetLayouts(pipelineSetLayouts)
+            //.setPipelineSetLayouts(pipelineSetLayouts)
             .build();
 
-            PipelineBuilder gridBuilder(renderer);
-            gridFloor = gridBuilder
-            .createFromExistingPipeline(pipelineBuilder)
-            .clearShaders()
-            .setShader("src/shaders/grid_floor.spv",
-               vk::ShaderStageFlagBits::eVertex,
-               "vertMain")
-            .setShader("src/shaders/grid_floor.spv",
-               vk::ShaderStageFlagBits::eFragment,
-               "fragMain")
-            .setPushConstant(vk::ShaderStageFlagBits::eVertex, sizeof(glm::mat4))
-            .setCullMode(vk::CullModeFlagBits::eNone)
-            .setDepthTest(true)
-            .setDepthWrite(true)
-            .setMultisampleSamples(vk::SampleCountFlagBits::e8)
-            .build();
+            // PipelineBuilder gridBuilder(renderer);
+            // gridFloor = gridBuilder
+            // .createFromExistingPipeline(pipelineBuilder)
+            // .clearShaders()
+            // .setShader("src/shaders/grid_floor.spv",
+            //    vk::ShaderStageFlagBits::eVertex,
+            //    "vertMain")
+            // .setShader("src/shaders/grid_floor.spv",
+            //    vk::ShaderStageFlagBits::eFragment,
+            //    "fragMain")
+            // .setPushConstant(vk::ShaderStageFlagBits::eVertex, sizeof(glm::mat4))
+            // .setCullMode(vk::CullModeFlagBits::eNone)
+            // .setDepthTest(true)
+            // .setDepthWrite(true)
+            // .setMultisampleSamples(vk::SampleCountFlagBits::e8)
+            // .build();
+
+            for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
+                renderer.updateFrameSet(TEMP_PIPELINE.getDescriptorSet(0, frame), uniformBuffer, frame);
+                renderer.updatePassSet(TEMP_PIPELINE.getDescriptorSet(1, frame), passBuffer, frame);
+                renderer.updateMaterialSet(TEMP_PIPELINE.getDescriptorSet(2, frame), texture.textureBuffer, texture);
+                renderer.updateObjectSet(TEMP_PIPELINE.getDescriptorSet(3, frame), instanceBuffers[PrimitiveType::SPHERE], frame);
+            }
         
             generateSphereData();
             generateQuadData();
@@ -162,7 +164,6 @@ export class Draw3D {
             lightBuffer,
             sphereInstanceData,
             lights,
-            descriptorSets,
             std::monostate(),
             camera.getProjMatrix(),
             view,
@@ -172,25 +173,25 @@ export class Draw3D {
             
         );
 
-        Mesh& quad = meshes[PrimitiveType::QUAD];
-         drawCalls.emplace_back(
-            gridFloor,
-            quad.vertexBuffer,
-            quad.indexBuffer,
-            uniformBuffer,
-            instanceBuffers[PrimitiveType::QUAD],
-            lightBuffer,
-            quadInstanceData,
-            lights,
-            descriptorSets,
-            quadInstanceData[0].model,
-            camera.getProjMatrix(),
-            view,
-            camera.getPosition(),
-            static_cast<u32>(quad.getIndices().size()),
-            static_cast<u32>(quadInstanceData.size())
+        // Mesh& quad = meshes[PrimitiveType::QUAD];
+        //  drawCalls.emplace_back(
+        //     gridFloor,
+        //     quad.vertexBuffer,
+        //     quad.indexBuffer,
+        //     uniformBuffer,
+        //     instanceBuffers[PrimitiveType::QUAD],
+        //     lightBuffer,
+        //     quadInstanceData,
+        //     lights,
+        //     descriptorSets,
+        //     quadInstanceData[0].model,
+        //     camera.getProjMatrix(),
+        //     view,
+        //     camera.getPosition(),
+        //     static_cast<u32>(quad.getIndices().size()),
+        //     static_cast<u32>(quadInstanceData.size())
            
-        );
+        // );
       
 
     
@@ -359,10 +360,9 @@ export class Draw3D {
 
 
     VulkanRenderer& renderer;
-    Descriptors descriptorSets;
     PipelineBuilder pipelineBuilder;
     GraphicsPipeline TEMP_PIPELINE;
-    GraphicsPipeline gridFloor;
+   // GraphicsPipeline gridFloor;
 
     std::array<Mesh, static_cast<int>(PrimitiveType::QUAD) + 1> meshes;
     

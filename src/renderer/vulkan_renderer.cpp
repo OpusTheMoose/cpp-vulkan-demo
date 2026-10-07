@@ -1,11 +1,10 @@
 module;
 
-
 #include <cstddef>
 #include <glm/ext/matrix_transform.hpp>
 #include <string_view>
 #include <tuple>
-#include <unordered_map>
+
 #include <utility>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
@@ -29,9 +28,12 @@ module;
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <vulkan/vulkan_to_string.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../utils/stb_image.h"
+
+#include "spirv_reflect.h"
 
 
 export module vulkan_renderer;
@@ -87,16 +89,16 @@ export enum DescriptorSetType {
 static_assert(sizeof(InstanceData) == 112);
 
 
-export struct Descriptors {
-    std::array<vk::raii::DescriptorSetLayout, 4> layouts = {
-        nullptr, nullptr, nullptr, nullptr
-    };
-    std::vector<vk::raii::DescriptorSet> frameSets;
-    std::vector<vk::raii::DescriptorSet> passSets;
-    std::vector<vk::raii::DescriptorSet> materialSets;
-    std::vector<vk::raii::DescriptorSet> instanceSets;
+// export struct Descriptors {
+//     std::array<vk::raii::DescriptorSetLayout, 4> layouts = {
+//         nullptr, nullptr, nullptr, nullptr
+//     };
+//     std::vector<vk::raii::DescriptorSet> frameSets;
+//     std::vector<vk::raii::DescriptorSet> passSets;
+//     std::vector<vk::raii::DescriptorSet> materialSets;
+//     std::vector<vk::raii::DescriptorSet> instanceSets;
 
-};
+// };
 
 export struct Texture {
     Texture(std::string_view path) { createTexture(path); }
@@ -114,10 +116,23 @@ export struct Texture {
     vk::raii::Sampler textureSampler = nullptr;
 };
 
-
+struct DescriptorSetData {
+    std::vector<vk::raii::DescriptorSetLayout> layouts;
+    std::vector<std::vector<vk::raii::DescriptorSet>> descriptorSets;
+};
 export struct GraphicsPipeline {
     vk::raii::Pipeline pipeline = nullptr;
     vk::raii::PipelineLayout layout = nullptr;
+    DescriptorSetData descriptorSetData;
+  auto getDescriptorSets() -> std::vector<std::vector<vk::raii::DescriptorSet>>& {
+            return descriptorSetData.descriptorSets;
+        }
+    auto getDescriptorSet(u32 setIndex, u32 frameIndex) -> vk::raii::DescriptorSet& {
+        if (setIndex >= descriptorSetData.descriptorSets.size()) {
+            throw std::out_of_range("Descriptor set index out of range");
+        }
+        return descriptorSetData.descriptorSets[setIndex][frameIndex];
+    }
 };
 
 
@@ -134,7 +149,7 @@ export struct DrawSubmission {
     
     std::span<const InstanceData> instanceData;
     std::span<const Light> lights;
-    Descriptors const& descriptorSets;
+    
 
     PushConstant pushConstant;
     glm::mat4 proj;
@@ -212,18 +227,71 @@ export class VulkanRenderer{
             createDepthResource();
         }
 
-    [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const
+    auto createShaderModule(const std::vector<char>& code) -> vk::raii::ShaderModule {
+        vk::ShaderModuleCreateInfo createInfo = {};
+        createInfo.setCodeSize(code.size())
+            .setPCode(reinterpret_cast<const uint32_t*>(code.data()));
+
+        return vk::raii::ShaderModule(device, createInfo);
+    }
+
+    struct DescriptorSetInfo {
+        u32 setIndex;
+        vk::DescriptorSetLayoutCreateInfo layoutInfo;
+        std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+    };
+
+    auto createDescriptorSetsFromShader(const std::vector<char>& code, const std::string &entryPoint, vk::ShaderStageFlags stage) const
     {
-        vk::ShaderModuleCreateInfo info;
-        info.codeSize = code.size() * sizeof(char);
-        info.pCode = reinterpret_cast<const u32*>(code.data());
-        return vk::raii::ShaderModule(device, info); 
+    
+        SpvReflectShaderModule spvModule;
+        SpvReflectResult result = spvReflectCreateShaderModule(code.size(), code.data(), &spvModule);
+        if (result != SPV_REFLECT_RESULT_SUCCESS) {
+            throw std::runtime_error("Failed to create SPIR-V reflection module");
+        }
+
+        u32 count = 0;
+        result = spvReflectEnumerateEntryPointDescriptorSets(&spvModule, entryPoint.c_str(), &count, nullptr);
+        assert(result == SPV_REFLECT_RESULT_SUCCESS);
+        std::vector<SpvReflectDescriptorSet*> descriptorSets(count); 
+        result = spvReflectEnumerateEntryPointDescriptorSets(&spvModule, entryPoint.c_str(), &count, descriptorSets.data());
+
+        std::vector<DescriptorSetInfo> setLayouts;
+        setLayouts.reserve(descriptorSets.size());
+
+        for (size_t i = 0; i < descriptorSets.size(); ++i) {
+            const SpvReflectDescriptorSet* set = descriptorSets[i];
+            setLayouts.emplace_back();
+            setLayouts.back().setIndex = set->set;
+            setLayouts.back().layoutBindings.reserve(set->binding_count);
+
+            for (uint32_t j = 0; j < set->binding_count; ++j) {
+                const SpvReflectDescriptorBinding* binding = set->bindings[j];
+                setLayouts.back().layoutBindings.emplace_back();
+                auto& layoutBinding = setLayouts.back().layoutBindings.back();
+                layoutBinding.setBinding(binding->binding)
+                    .setDescriptorType(static_cast<vk::DescriptorType>(binding->descriptor_type))
+                    .setDescriptorCount(1)
+                    .setStageFlags(stage);
+    
+                for (u32 i_dim = 0; i_dim < binding->array.dims_count; ++i_dim) {
+                    layoutBinding.descriptorCount *= binding->array.dims[i_dim];
+                }
+               
+            
+            }
+            
+        }
+
+        spvReflectDestroyShaderModule(&spvModule);
+
+        return setLayouts;
+
 
     }
     auto getCurrentDevice() -> const vk::raii::Device& {
         return this->device;
     }
-
 
        auto createDescriptorSetLayout(vk::ShaderStageFlags stageFlags, vk::DescriptorType descriptorSetType) ->  vk::raii::DescriptorSetLayout {
 
@@ -676,10 +744,12 @@ export class VulkanRenderer{
         {
             ZoneScopedN("Handle draw calls");
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.pipeline);
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 3, *draw.descriptorSets.instanceSets[frameIndex], nullptr);
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 0, *draw.descriptorSets.frameSets[frameIndex], nullptr);         
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 2, *draw.descriptorSets.materialSets[frameIndex], nullptr);
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, 1, *draw.descriptorSets.passSets[frameIndex], nullptr);         
+
+            for (u32 setIndex = 0; setIndex < draw.pipelineInfo.descriptorSetData.descriptorSets.size(); ++setIndex)
+            {
+                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, setIndex, *draw.pipelineInfo.descriptorSetData.descriptorSets[setIndex][frameIndex], nullptr);
+            }
+
                
 
             // Deduce type of push constant, if there is one
@@ -1486,6 +1556,9 @@ export struct PipelineConfig {
     vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
 };
 
+
+
+
 export class PipelineBuilder {
     public:
         PipelineBuilder(VulkanRenderer& renderer_) :
@@ -1657,9 +1730,15 @@ export class PipelineBuilder {
             shaderModules.reserve(pipelineConfig.shaderStages.size());
             stages.reserve(pipelineConfig.shaderStages.size());
 
+            
+            std::vector<VulkanRenderer::DescriptorSetInfo> descriptorSetLayouts;
             for (auto const& shader : pipelineConfig.shaderStages)
             {
                 shaderModules.emplace_back(renderer.createShaderModule(shader.code));
+                std::println("Shader stage: {} with entry point: {}", vk::to_string(shader.stage), shader.entryPoint);
+
+                auto layouts = renderer.createDescriptorSetsFromShader(shader.code, shader.entryPoint, shader.stage);
+                std::move(layouts.begin(), layouts.end(), std::back_inserter(descriptorSetLayouts));
 
                 vk::PipelineShaderStageCreateInfo stageInfo;
                 stageInfo
@@ -1669,8 +1748,58 @@ export class PipelineBuilder {
 
                 stages.emplace_back(stageInfo);
             }
-           
-            vk::raii::PipelineLayout layout = vk::raii::PipelineLayout(renderer.getCurrentDevice(), pipelineConfig.pipelineLayoutInfo);
+        
+            // find the highest set number
+            u32 maxSetNumber = 0;
+            for (auto const& layout : descriptorSetLayouts)
+            {
+                if (layout.setIndex > maxSetNumber)
+                {
+                    maxSetNumber = layout.setIndex;
+                }
+            }
+
+            for (auto& setInfo : descriptorSetLayouts) {
+                auto& layoutInfo = setInfo.layoutInfo;
+                layoutInfo.setBindingCount(
+                    static_cast<u32>(setInfo.layoutBindings.size()));
+                layoutInfo.setPBindings(setInfo.layoutBindings.data());
+            }
+
+            std::sort(descriptorSetLayouts.begin(), descriptorSetLayouts.end(), [](const VulkanRenderer::DescriptorSetInfo& a, const VulkanRenderer::DescriptorSetInfo& b) {
+                return a.setIndex < b.setIndex;
+            });
+     
+            DescriptorSetData descriptorSetData;
+       
+            for (auto const& setInfo : descriptorSetLayouts) {
+                descriptorSetData.layouts.emplace_back(renderer.getCurrentDevice(), setInfo.layoutInfo);
+        
+            }
+            
+            // but for some FUCKING REASON the p set layouts expects non-raii handles so we have to convert this shit 
+            std::vector<vk::DescriptorSetLayout> nonRaiiSetLayouts;
+            for (auto const& setLayout : descriptorSetData.layouts) {
+                nonRaiiSetLayouts.emplace_back(*setLayout);
+            }
+      
+
+            pipelineConfig.pipelineLayoutInfo.setSetLayoutCount(maxSetNumber + 1);
+            pipelineConfig.pipelineLayoutInfo.setPSetLayouts(nonRaiiSetLayouts.data());
+
+            // allocate descriptor sets
+            descriptorSetData.descriptorSets.resize(descriptorSetData.layouts.size());
+            for (size_t i = 0; i < descriptorSetData.layouts.size(); ++i) {
+                if (descriptorSetData.layouts[i] == nullptr) continue;
+
+                descriptorSetData.descriptorSets[i] = renderer.allocateDescriptorSets(descriptorSetData.layouts[i], FRAMES_IN_FLIGHT);
+                
+            }
+
+
+            vk::raii::PipelineLayout layout(
+                renderer.getCurrentDevice(), pipelineConfig.pipelineLayoutInfo);
+
             pipelineCreateInfoChain.get().setStageCount(pipelineConfig.shaderStages.size())
             .setPInputAssemblyState(&pipelineConfig.inputAssemblyInfo)
             .setPStages(stages.data())
@@ -1687,7 +1816,7 @@ export class PipelineBuilder {
 
             vk::raii::Pipeline new_pipeline = vk::raii::Pipeline( renderer.getCurrentDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 
-            return GraphicsPipeline{std::move(new_pipeline), std::move(layout)};
+            return GraphicsPipeline{std::move(new_pipeline), std::move(layout), std::move(descriptorSetData)};
             }
 
 
@@ -1697,9 +1826,11 @@ export class PipelineBuilder {
             return *this;
         }
 
+      
+
     private:
+    
        VulkanRenderer& renderer;
        Logger logger;
        PipelineConfig pipelineConfig;
-      
 };
