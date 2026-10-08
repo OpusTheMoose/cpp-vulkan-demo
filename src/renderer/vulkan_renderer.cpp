@@ -241,16 +241,40 @@ export class VulkanRenderer{
         std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
     };
 
-    auto createDescriptorSetsFromShader(const std::vector<char>& code, const std::string &entryPoint, vk::ShaderStageFlags stage) const
-    {
-    
-        SpvReflectShaderModule spvModule;
-        SpvReflectResult result = spvReflectCreateShaderModule(code.size(), code.data(), &spvModule);
-        if (result != SPV_REFLECT_RESULT_SUCCESS) {
-            throw std::runtime_error("Failed to create SPIR-V reflection module");
+    auto getPushConstantRangesFromShader(SpvReflectShaderModule& spvModule, const std::string &entryPoint, vk::ShaderStageFlags stage) -> std::vector<vk::PushConstantRange> {
+      
+        u32 count = 0;
+
+        [[maybe_unused]]
+        SpvReflectResult result = spvReflectEnumerateEntryPointPushConstantBlocks(&spvModule, entryPoint.c_str(), &count, nullptr);
+        assert(result == SPV_REFLECT_RESULT_SUCCESS);
+        
+        std::vector<SpvReflectBlockVariable*> pushConstantBlocks(count);
+        result = spvReflectEnumerateEntryPointPushConstantBlocks(&spvModule, entryPoint.c_str(), &count, pushConstantBlocks.data());
+        assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+        std::vector<vk::PushConstantRange> pushConstants;
+        pushConstants.reserve(pushConstantBlocks.size());
+
+        for (const SpvReflectBlockVariable* block : pushConstantBlocks) {
+            pushConstants.emplace_back();
+            auto& pc = pushConstants.back();
+            pc.stageFlags = stage; 
+            pc.offset = block->offset;
+            pc.size = block->size;
         }
 
+        
+
+        return pushConstants;
+    }
+
+    auto createDescriptorSetsFromShader(SpvReflectShaderModule& spvModule, const std::string &entryPoint, vk::ShaderStageFlags stage) const
+    {
+    
         u32 count = 0;
+        [[maybe_unused]]
+        SpvReflectResult result;
         result = spvReflectEnumerateEntryPointDescriptorSets(&spvModule, entryPoint.c_str(), &count, nullptr);
         assert(result == SPV_REFLECT_RESULT_SUCCESS);
         std::vector<SpvReflectDescriptorSet*> descriptorSets(count); 
@@ -283,7 +307,7 @@ export class VulkanRenderer{
             
         }
 
-        spvReflectDestroyShaderModule(&spvModule);
+        
 
         return setLayouts;
 
@@ -1730,15 +1754,25 @@ export class PipelineBuilder {
             shaderModules.reserve(pipelineConfig.shaderStages.size());
             stages.reserve(pipelineConfig.shaderStages.size());
 
-            
             std::vector<VulkanRenderer::DescriptorSetInfo> descriptorSetLayouts;
+            
+
+            
             for (auto const& shader : pipelineConfig.shaderStages)
             {
                 shaderModules.emplace_back(renderer.createShaderModule(shader.code));
-                std::println("Shader stage: {} with entry point: {}", vk::to_string(shader.stage), shader.entryPoint);
-
-                auto layouts = renderer.createDescriptorSetsFromShader(shader.code, shader.entryPoint, shader.stage);
+                    SpvReflectShaderModule spvModule;
+                  SpvReflectResult result = spvReflectCreateShaderModule(shader.code.size(), shader.code.data(), &spvModule);
+                    if (result != SPV_REFLECT_RESULT_SUCCESS) {
+                    throw std::runtime_error("Failed to create SPIR-V reflection module");
+                }
+                
+                auto layouts = renderer.createDescriptorSetsFromShader(spvModule, shader.entryPoint, shader.stage);
                 std::move(layouts.begin(), layouts.end(), std::back_inserter(descriptorSetLayouts));
+
+                auto reflectedPushConstants = renderer.getPushConstantRangesFromShader(spvModule, shader.entryPoint, shader.stage);
+                std::move(reflectedPushConstants.begin(), reflectedPushConstants.end(), std::back_inserter(pipelineConfig.pushConstantRanges));
+
 
                 vk::PipelineShaderStageCreateInfo stageInfo;
                 stageInfo
@@ -1747,6 +1781,8 @@ export class PipelineBuilder {
                 .setPName(shader.entryPoint.c_str());
 
                 stages.emplace_back(stageInfo);
+
+                spvReflectDestroyShaderModule(&spvModule);
             }
         
             // find the highest set number
@@ -1796,6 +1832,11 @@ export class PipelineBuilder {
                 
             }
 
+            pipelineConfig.pipelineLayoutInfo.setPushConstantRangeCount(static_cast<u32>(pipelineConfig.pushConstantRanges.size()));
+            if (!pipelineConfig.pushConstantRanges.empty()) {
+                pipelineConfig.pipelineLayoutInfo.setPushConstantRanges(pipelineConfig.pushConstantRanges);
+            }
+            
 
             vk::raii::PipelineLayout layout(
                 renderer.getCurrentDevice(), pipelineConfig.pipelineLayoutInfo);
