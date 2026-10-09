@@ -76,29 +76,14 @@ export struct InstanceData {
     glm::mat4x4 model;
     // For correct alignment 
     std::array<glm::vec4, 3> normal;
+};
 
-};
-export enum DescriptorSetType {
-    FRAME,
-    PASS,
-    MATERIAL,
-    OBJECT
-};
+
 
 
 static_assert(sizeof(InstanceData) == 112);
 
 
-// export struct Descriptors {
-//     std::array<vk::raii::DescriptorSetLayout, 4> layouts = {
-//         nullptr, nullptr, nullptr, nullptr
-//     };
-//     std::vector<vk::raii::DescriptorSet> frameSets;
-//     std::vector<vk::raii::DescriptorSet> passSets;
-//     std::vector<vk::raii::DescriptorSet> materialSets;
-//     std::vector<vk::raii::DescriptorSet> instanceSets;
-
-// };
 
 export struct Texture {
     Texture(std::string_view path) { createTexture(path); }
@@ -123,6 +108,7 @@ struct DescriptorSetData {
 export struct GraphicsPipeline {
     vk::raii::Pipeline pipeline = nullptr;
     vk::raii::PipelineLayout layout = nullptr;
+
     DescriptorSetData descriptorSetData;
   auto getDescriptorSets() -> std::vector<std::vector<vk::raii::DescriptorSet>>& {
             return descriptorSetData.descriptorSets;
@@ -364,6 +350,45 @@ export class VulkanRenderer{
         return instanceBuffer;
     }
 
+
+      auto uploadBuffer(GraphicsPipeline& pipeline, Buffer& buffer, vk::DescriptorType descriptorType, u32 set, u32 binding, u32 index)-> void  {
+        vk::DescriptorBufferInfo bufferInfo;
+        bufferInfo.setBuffer(*buffer.buffers[index])
+            .setOffset(0)
+            .setRange(buffer.bufferSize);
+
+         vk::WriteDescriptorSet write;
+            write.setDstSet(pipeline.getDescriptorSet(set, index))
+            .setDstBinding(binding)
+            .setDescriptorCount(1)
+            .setDescriptorType(descriptorType)
+            .setPBufferInfo(&bufferInfo);
+
+        device.updateDescriptorSets(write, {});
+    }
+
+    auto uploadImageBuffer(GraphicsPipeline& pipeline, Buffer& buffer, Texture& texture, vk::DescriptorType descriptorType, u32 set, u32 binding, u32 index)-> void 
+    {
+         vk::DescriptorBufferInfo bufferInfo;
+        bufferInfo.setBuffer(*buffer.buffers[index])
+            .setOffset(0)
+            .setRange(buffer.bufferSize);
+        vk::DescriptorImageInfo imageInfo;
+        imageInfo.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+            .setImageView(texture.imageView)
+            .setSampler(texture.textureSampler);
+
+        vk::WriteDescriptorSet write;
+        write.setDstSet(pipeline.getDescriptorSet(set, index))
+            .setDstBinding(binding)
+            .setDescriptorCount(1)
+            .setDescriptorType(descriptorType)
+            .setPBufferInfo(&bufferInfo)
+            .setPImageInfo(&imageInfo);
+
+        device.updateDescriptorSets(write, {});
+    }
+
     auto getSwapSurfaceFormat()
     {
         return swapChainSurfaceFormat;
@@ -574,6 +599,7 @@ export class VulkanRenderer{
 
     
 
+  
     auto updateFrameSet(vk::raii::DescriptorSet& set, Buffer const& buffer, u32 frameIndex) -> void
     {
         vk::DescriptorBufferInfo bufferInfo;
@@ -1743,6 +1769,7 @@ export class PipelineBuilder {
 
             
         }
+    
        auto build() -> GraphicsPipeline {
             rebindPointers();
             vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain;

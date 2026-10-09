@@ -80,7 +80,8 @@ export class Draw3D {
             .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
             .setViewportState(1, 1)
             .setMultisampleShading(false)
-            //.setPipelineSetLayouts(pipelineSetLayouts)
+            
+            
             .build();
 
             PipelineBuilder gridBuilder(renderer);
@@ -100,12 +101,14 @@ export class Draw3D {
             .build();
 
             for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
-                renderer.updateFrameSet(TEMP_PIPELINE.getDescriptorSet(0, frame), uniformBuffer, frame);
-                renderer.updateFrameSet(gridFloor.getDescriptorSet(0, frame), uniformBuffer, frame);
-                renderer.updatePassSet(TEMP_PIPELINE.getDescriptorSet(1, frame), passBuffer, frame);
-                renderer.updateMaterialSet(TEMP_PIPELINE.getDescriptorSet(2, frame), texture.textureBuffer, texture);
-                renderer.updateObjectSet(TEMP_PIPELINE.getDescriptorSet(3, frame), instanceBuffers[PrimitiveType::SPHERE], frame);
+                renderer.uploadBuffer(TEMP_PIPELINE, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
+                renderer.uploadBuffer(gridFloor, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
+                renderer.uploadBuffer(TEMP_PIPELINE, passBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
+               renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
+                renderer.uploadImageBuffer(TEMP_PIPELINE, texture.textureBuffer, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
+  
             }
+            
 
         
             generateSphereData();
