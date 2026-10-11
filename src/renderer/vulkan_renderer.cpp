@@ -60,7 +60,9 @@ export struct Buffer {
     std::vector<vk::raii::Buffer> buffers;
     std::vector<vk::raii::DeviceMemory> buffersMemory;
     std::vector<void*> buffersMapped;
-    size_t bufferSize = 0; 
+    size_t bufferSize = 0;
+    vk::BufferUsageFlagBits usageFlags; 
+    
 };
 export struct UniformBufferObject {
     glm::mat4 view;
@@ -127,21 +129,10 @@ using PushConstant = std::variant<std::monostate, glm::mat4>;
 export struct DrawSubmission {
     GraphicsPipeline const &pipelineInfo; 
     Buffer const& vertexBuffer;
-    Buffer const& indexBuffer;
-
-    Buffer const& uniformBuffer;
-    Buffer const& instanceBuffer;
-    Buffer const& lightBuffer;
-    
+    Buffer const& indexBuffer; 
     std::span<const InstanceData> instanceData;
     std::span<const Light> lights;
-    
-
     PushConstant pushConstant;
-    glm::mat4 proj;
-    glm::mat4 view;
-    glm::vec3 cameraPosition;
-
     u32 indexCount, instanceCount;
 };
 
@@ -226,6 +217,16 @@ export class VulkanRenderer{
         vk::DescriptorSetLayoutCreateInfo layoutInfo;
         std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
     };
+
+    template <typename T>
+    auto setUniform(T uniform, const Buffer& uniformBuffer, u32 frame) -> void {
+        memcpy(
+            uniformBuffer.buffersMapped[frame],
+            &uniform,
+            sizeof(T)
+        );
+
+    }
 
     auto getPushConstantRangesFromShader(SpvReflectShaderModule& spvModule, const std::string &entryPoint, vk::ShaderStageFlags stage) -> std::vector<vk::PushConstantRange> {
       
@@ -367,12 +368,9 @@ export class VulkanRenderer{
         device.updateDescriptorSets(write, {});
     }
 
-    auto uploadImageBuffer(GraphicsPipeline& pipeline, Buffer& buffer, Texture& texture, vk::DescriptorType descriptorType, u32 set, u32 binding, u32 index)-> void 
+    auto uploadImageBuffer(GraphicsPipeline& pipeline, Texture& texture, vk::DescriptorType descriptorType, u32 set, u32 binding, u32 index)-> void 
     {
-         vk::DescriptorBufferInfo bufferInfo;
-        bufferInfo.setBuffer(*buffer.buffers[index])
-            .setOffset(0)
-            .setRange(buffer.bufferSize);
+     
         vk::DescriptorImageInfo imageInfo;
         imageInfo.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
             .setImageView(texture.imageView)
@@ -383,7 +381,6 @@ export class VulkanRenderer{
             .setDstBinding(binding)
             .setDescriptorCount(1)
             .setDescriptorType(descriptorType)
-            .setPBufferInfo(&bufferInfo)
             .setPImageInfo(&imageInfo);
 
         device.updateDescriptorSets(write, {});
@@ -396,7 +393,7 @@ export class VulkanRenderer{
 
     template <typename T>
     requires std::is_trivially_copyable_v<T>
-    auto updateStorageBuffer( const Buffer &buffer, std::span<const T> data, u32 currentFrame, size_t bufferSize) -> void 
+    auto setStorageBuffer( const Buffer &buffer, std::span<const T> data, u32 currentFrame, size_t bufferSize) -> void 
     {
         ZoneScopedN("Update storage buffer");
         if (currentFrame >= buffer.buffersMapped.size())
@@ -514,26 +511,6 @@ export class VulkanRenderer{
                 device.resetFences(*inFlightFences[frameIndex]);
             
 
-            {
-                ZoneScopedN("Handle Draw Calls")
-                for (auto draw : drawCalls)
-                {
-                    UniformBufferObject cameraUBO = {};
-                    cameraUBO.proj = draw.proj;
-                    cameraUBO.view = draw.view; 
-                    {
-                        ZoneScopedN("Update Uniform Buffer");
-                        updateUniformBuffer(cameraUBO, draw.uniformBuffer, frameIndex);
-                    }
-
-                    {
-                        ZoneScopedN("Update storage buffers");
-                        updateStorageBuffer(draw.instanceBuffer, draw.instanceData, frameIndex, draw.instanceBuffer.bufferSize);
-                        updateStorageBuffer(draw.lightBuffer, draw.lights, frameIndex, draw.lightBuffer.bufferSize);
-                    }
-
-                }
-            }
       
             commandBuffers[frameIndex].reset();
             recordCommandBuffer(drawCalls, drawData, imageIndex );
@@ -595,81 +572,7 @@ export class VulkanRenderer{
             .setDescriptorSetCount(static_cast<u32>(layouts.size()))
             .setPSetLayouts(layouts.data());
         return device.allocateDescriptorSets(allocInfo);
-    }
-
-    
-
-  
-    auto updateFrameSet(vk::raii::DescriptorSet& set, Buffer const& buffer, u32 frameIndex) -> void
-    {
-        vk::DescriptorBufferInfo bufferInfo;
-        bufferInfo.setBuffer(*buffer.buffers[frameIndex])
-            .setOffset(0)
-            .setRange(buffer.bufferSize);
-
-        vk::WriteDescriptorSet write;
-        write.setDstSet(set)
-            .setDstBinding(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-            .setPBufferInfo(&bufferInfo);
-
-        device.updateDescriptorSets(write, {});
-    }
-    auto updatePassSet(vk::raii::DescriptorSet& set, Buffer const& buffer, u32 frameIndex) -> void
-    {
-        vk::DescriptorBufferInfo bufferInfo;
-        bufferInfo.setBuffer(*buffer.buffers[frameIndex])
-            .setOffset(0)
-            .setRange(buffer.bufferSize);
-
-        vk::WriteDescriptorSet write;
-        write.setDstSet(set)
-            .setDstBinding(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setPBufferInfo(&bufferInfo);
-
-        device.updateDescriptorSets(write, {});
-    }
-    auto updateMaterialSet(vk::raii::DescriptorSet& set, Buffer const& buffer, Texture const& texture) -> void
-    {
-        vk::DescriptorBufferInfo bufferInfo;
-        bufferInfo.setBuffer(*buffer.buffers[0])
-            .setOffset(0)
-            .setRange(buffer.bufferSize);
-        vk::DescriptorImageInfo imageInfo;
-        imageInfo.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-            .setImageView(texture.imageView)
-            .setSampler(texture.textureSampler);
-
-        vk::WriteDescriptorSet write;
-        write.setDstSet(set)
-            .setDstBinding(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-            .setPBufferInfo(&bufferInfo)
-            .setPImageInfo(&imageInfo);
-
-        device.updateDescriptorSets(write, {});
-    }
-    auto updateObjectSet(vk::raii::DescriptorSet& set, Buffer const& buffer, u32 frameIndex) -> void
-    {
-        vk::DescriptorBufferInfo bufferInfo;
-        bufferInfo.setBuffer(*buffer.buffers[frameIndex])
-            .setOffset(0)
-            .setRange(buffer.bufferSize);
-
-        vk::WriteDescriptorSet write;
-        write.setDstSet(set)
-            .setDstBinding(0)
-            .setDescriptorCount(1)
-            .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-            .setPBufferInfo(&bufferInfo);
-
-        device.updateDescriptorSets(write, {});
-    }
-   
+    } 
 
     auto getRendererInfo() -> VulkanInfo {
         return {
@@ -1293,15 +1196,6 @@ export class VulkanRenderer{
 
         throw std::runtime_error("failed to find suitable memory type!");
 
-    }
-
- 
-
-  
-
-    auto updateUniformBuffer( UniformBufferObject& uniformBufferObject, const Buffer& ubo, u32 frameIndex) -> void {
-        
-        memcpy(ubo.buffersMapped[frameIndex], &uniformBufferObject, sizeof(UniformBufferObject));
     }
 
     auto createDescriptorPool() -> void {

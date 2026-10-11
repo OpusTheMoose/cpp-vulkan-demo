@@ -105,7 +105,7 @@ export class Draw3D {
                 renderer.uploadBuffer(gridFloor, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
                 renderer.uploadBuffer(TEMP_PIPELINE, passBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
                renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
-                renderer.uploadImageBuffer(TEMP_PIPELINE, texture.textureBuffer, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
+                renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
   
             }
             
@@ -137,20 +137,24 @@ export class Draw3D {
         glm::mat4 view = camera.getViewMatrix();
         view[3] = glm::vec4(0.0, 0.0, 0.0, 1.0);
 
+        UniformBufferObject cameraUBO = {};
+        cameraUBO.proj = camera.getProjMatrix();
+        cameraUBO.view = view;
+
+        for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
+            renderer.setUniform(cameraUBO, uniformBuffer, frame);
+            renderer.setStorageBuffer(instanceBuffers[PrimitiveType::SPHERE], std::span<const InstanceData>(sphereInstanceData), frame, instanceBuffers[PrimitiveType::SPHERE].bufferSize);
+            renderer.setStorageBuffer(lightBuffer, std::span<const Light>(lights), frame, lightBuffer.bufferSize);
+        }
+
        
         drawCalls.emplace_back(
             TEMP_PIPELINE,
             sphere.vertexBuffer,
             sphere.indexBuffer,
-            uniformBuffer,
-            instanceBuffers[PrimitiveType::SPHERE],
-            lightBuffer,
             sphereInstanceData,
             lights,
             std::monostate(),
-            camera.getProjMatrix(),
-            view,
-            camera.getPosition(),
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
             
@@ -161,15 +165,9 @@ export class Draw3D {
             gridFloor,
             quad.vertexBuffer,
             quad.indexBuffer,
-            uniformBuffer,
-            instanceBuffers[PrimitiveType::QUAD],
-            lightBuffer,
             quadInstanceData,
             lights, 
             quadInstanceData[0].model,
-            camera.getProjMatrix(),
-            view,
-            camera.getPosition(),
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())
            
