@@ -31,6 +31,17 @@ export enum PrimitiveType {
 
 };
 
+export struct UniformBufferObject {
+    glm::mat4 view;
+    glm::mat4 proj; 
+};
+
+export struct Light {
+   alignas(16) glm::vec3 pos;
+   alignas(16) glm::vec3 color;
+};
+
+
 
 export class Draw3D {
     public:
@@ -41,7 +52,7 @@ export class Draw3D {
                e = renderer.createStorageBuffer(sizeof(InstanceData) * 1000);
             }
 
-            renderer.uploadTextureVulkan(texture);
+            renderer.uploadTextureVulkan(texture, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
             lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
             uniformBuffer = renderer.createUniformBuffers(sizeof(UniformBufferObject));
@@ -103,7 +114,7 @@ export class Draw3D {
             for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
                 renderer.uploadBuffer(TEMP_PIPELINE, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
                 renderer.uploadBuffer(gridFloor, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
-                renderer.uploadBuffer(TEMP_PIPELINE, passBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
+                renderer.uploadBuffer(TEMP_PIPELINE, lightBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
                renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
                 renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
   
@@ -128,8 +139,8 @@ export class Draw3D {
 
         Mesh& sphere = meshes[PrimitiveType::SPHERE];
         std::vector<Light> lights;
-        lights.emplace_back(glm::vec3(0.0, -5.0, 0.0) - camera.getPosition(), 
-        glm::vec3(0.8));
+        lights.emplace_back(glm::vec3(1e8, 0.0, 0.0) - camera.getPosition(), 
+        glm::vec3(1.0, 1.0, 1.0));
         
         std::vector<DrawSubmission> drawCalls;
 
@@ -142,18 +153,19 @@ export class Draw3D {
         cameraUBO.view = view;
 
         for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
+            ZoneScopedN("Uploading buffers for frame");
             renderer.setUniform(cameraUBO, uniformBuffer, frame);
-            renderer.setStorageBuffer(instanceBuffers[PrimitiveType::SPHERE], std::span<const InstanceData>(sphereInstanceData), frame, instanceBuffers[PrimitiveType::SPHERE].bufferSize);
+             renderer.setStorageBuffer(instanceBuffers[PrimitiveType::SPHERE], std::span<const InstanceData>(sphereInstanceData), frame, instanceBuffers[PrimitiveType::SPHERE].bufferSize);
             renderer.setStorageBuffer(lightBuffer, std::span<const Light>(lights), frame, lightBuffer.bufferSize);
         }
+       
 
        
         drawCalls.emplace_back(
             TEMP_PIPELINE,
             sphere.vertexBuffer,
             sphere.indexBuffer,
-            sphereInstanceData,
-            lights,
+            sphereInstanceData, 
             std::monostate(),
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
@@ -165,8 +177,7 @@ export class Draw3D {
             gridFloor,
             quad.vertexBuffer,
             quad.indexBuffer,
-            quadInstanceData,
-            lights, 
+            quadInstanceData, 
             quadInstanceData[0].model,
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())

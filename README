@@ -1,4 +1,10 @@
 compile: cmake -G Ninja -S . -B build
 cmake --build build to run
 
+To enable / run Tracy Profiler:
 cmake -G Ninja -S . -B build -DTRACY_ENABLE=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+Tracy profiler is included in the CMake. Run these commands to build:
+cmake -S build/_deps/tracy-src/profiler -B build/tracy-profiler -DCMAKE_BUILD_TYPE=Release
+cmake --build build/tracy-profiler --parallel
+./build/tracy-profiler/tracy-profiler

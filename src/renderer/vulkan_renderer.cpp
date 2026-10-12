@@ -64,15 +64,9 @@ export struct Buffer {
     vk::BufferUsageFlagBits usageFlags; 
     
 };
-export struct UniformBufferObject {
-    glm::mat4 view;
-    glm::mat4 proj; 
-};
 
-export struct Light {
-    glm::vec3 pos;
-    glm::vec3 color;
-};
+
+
 
 export struct InstanceData {
     glm::mat4x4 model;
@@ -81,9 +75,6 @@ export struct InstanceData {
 };
 
 
-
-
-static_assert(sizeof(InstanceData) == 112);
 
 
 
@@ -130,8 +121,7 @@ export struct DrawSubmission {
     GraphicsPipeline const &pipelineInfo; 
     Buffer const& vertexBuffer;
     Buffer const& indexBuffer; 
-    std::span<const InstanceData> instanceData;
-    std::span<const Light> lights;
+    std::span<const InstanceData> instanceData; 
     PushConstant pushConstant;
     u32 indexCount, instanceCount;
 };
@@ -493,7 +483,7 @@ export class VulkanRenderer{
 		        device.resetFences(*inFlightFences[frameIndex]);
             }
 
-            
+         
                 auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
 
                 if (result == vk::Result::eErrorOutOfDateKHR)
@@ -594,8 +584,8 @@ export class VulkanRenderer{
         };
     }
 
-    auto uploadTextureVulkan(Texture& texture ){
-        uploadImageTexture(texture, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    auto uploadTextureVulkan(Texture& texture, vk::MemoryPropertyFlagBits memoryProperties) -> void {
+        uploadImageTexture(texture, memoryProperties);
     }
 
     private:
@@ -1016,26 +1006,13 @@ export class VulkanRenderer{
     auto createImageViews() -> void {
         assert(swapChainImageViews.empty());
 
-        //  vk::ImageViewCreateInfo imageViewCreateInfo;
-        //  imageViewCreateInfo.viewType         = vk::ImageViewType::e2D;
-        // imageViewCreateInfo.format           = swapChainSurfaceFormat.format;
-        // imageViewCreateInfo.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 } ;
-        // vk::ImageSubresourceRange range;
-        // range.aspectMask = vk::ImageAspectFlagBits::eColor;
-        // range.levelCount = 1;
-        // range.layerCount = 1;
-
         swapChainImageViews.reserve(swapChainImages.size());
         for ( auto &image: swapChainImages )
         {
             swapChainImageViews.emplace_back(createImageView(image, swapChainSurfaceFormat.format, vk::ImageAspectFlagBits::eColor));
         }
 
-        // for (auto &image : swapChainImages)
-        // {
-        //     imageViewCreateInfo.image = image;
-        //     swapChainImageViews.emplace_back(device, imageViewCreateInfo);
-        // }
+   
 
     }
 
@@ -1236,7 +1213,7 @@ export class VulkanRenderer{
     }
  
 
-    vk::raii::ImageView createImageView(vk::Image const &image, vk::Format format, vk::ImageAspectFlags aspectFlags)
+    vk::raii::ImageView createImageView(vk::Image const &image, vk::Format format, vk::ImageAspectFlags aspectFlags, vk::ImageViewType viewType = vk::ImageViewType::e2D)
 	{
         vk::ImageSubresourceRange range = {};
         range.setAspectMask(aspectFlags)
@@ -1247,21 +1224,29 @@ export class VulkanRenderer{
 
 		vk::ImageViewCreateInfo viewInfo = {};
         viewInfo.setImage(image)
-        .setViewType(vk::ImageViewType::e2D)
+        .setViewType(viewType)
         .setFormat(format)
         .setSubresourceRange(range);
 
 		return vk::raii::ImageView(device, viewInfo);
 	}
 
-	std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(uint32_t width, uint32_t height, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties)
+	std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(
+        uint32_t width, 
+        uint32_t height, 
+        vk::SampleCountFlagBits numSamples, 
+        vk::Format format, 
+        vk::ImageTiling tiling, 
+        vk::ImageUsageFlags usage, 
+        vk::MemoryPropertyFlags properties,
+        u32 arrayLayers = 1)
 	{
 		vk::ImageCreateInfo imageInfo = {};
         imageInfo.setImageType(vk::ImageType::e2D)
         .setFormat(format)
         .setExtent({width, height, 1})
         .setMipLevels(1)
-        .setArrayLayers(1)
+        .setArrayLayers(arrayLayers)
         .setSamples(numSamples)
         .setTiling(tiling)
         .setUsage(usage)
@@ -1662,6 +1647,12 @@ export class PipelineBuilder {
             .setPushConstantRanges(pipelineConfig.pushConstantRanges);
 
             
+        }
+        PipelineBuilder& uploadTexture(Texture& texture, vk::MemoryPropertyFlagBits properties) {
+
+
+            renderer.uploadTextureVulkan(texture, properties);
+            return *this;
         }
     
        auto build() -> GraphicsPipeline {
