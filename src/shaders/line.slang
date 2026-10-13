@@ -13,12 +13,11 @@ struct Instances {
     float4x4 model;
 };
 
+
 [[vk::binding(0,0 )]]
 ConstantBuffer<UniformBuffer> ubo;
 
-
-
-[[vk::binding(3, 0)]]
+[[vk::binding(0, 3)]]
 StructuredBuffer<Instances> instanceModels;
 
 struct VSOutput {

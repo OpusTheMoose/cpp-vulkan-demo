@@ -120,10 +120,10 @@ using PushConstant = std::variant<std::monostate, glm::mat4>;
 export struct DrawSubmission {
     GraphicsPipeline const &pipelineInfo; 
     Buffer const& vertexBuffer;
-    Buffer const& indexBuffer; 
+    Buffer const* indexBuffer; 
     std::span<const InstanceData> instanceData; 
     PushConstant pushConstant;
-    u32 indexCount, instanceCount;
+    u32 elementCount, instanceCount;
 };
 
 export struct VulkanInfo {
@@ -417,6 +417,24 @@ export class VulkanRenderer{
 
     }
 
+    auto createDynamicVertexBuffer(size_t capacity) -> Buffer {
+        Buffer result;
+
+        for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
+            Buffer frameBuffer = createBuffer(
+                capacity,
+                vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+            );
+
+            result.buffers.emplace_back(std::move(frameBuffer.buffers.front()));
+            result.buffersMemory.emplace_back(std::move(frameBuffer.buffersMemory.front()));
+            result.buffersMapped.emplace_back(result.buffersMemory.back().mapMemory(0, capacity));
+        }
+        result.bufferSize = capacity;
+        return result;
+    }
+
     auto createIndexBuffer(void* data, size_t bufferSize) -> Buffer {
 
         return createStagingBuffer(data, bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst);
@@ -706,8 +724,15 @@ export class VulkanRenderer{
             }, draw.pushConstant );
         
             commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
-            commandBuffer.bindIndexBuffer(draw.indexBuffer.buffers[0], 0, vk::IndexType::eUint16);
-            commandBuffer.drawIndexed(static_cast<u32>(draw.indexCount), draw.instanceCount, 0, 0, 0);
+            if  (draw.indexBuffer != nullptr)
+            {
+                commandBuffer.bindIndexBuffer(draw.indexBuffer->buffers[0], 0, vk::IndexType::eUint16);
+                commandBuffer.drawIndexed(static_cast<u32>(draw.elementCount), draw.instanceCount, 0, 0, 0);
+            }
+            else
+            {
+                commandBuffer.draw(static_cast<u32>(draw.elementCount), draw.instanceCount, 0, 0);
+            }
             
         }
         {
@@ -1179,15 +1204,15 @@ export class VulkanRenderer{
          std::array<vk::DescriptorPoolSize, 5> poolSizes = {
         vk::DescriptorPoolSize{
             vk::DescriptorType::eUniformBuffer,
-            FRAMES_IN_FLIGHT
+            FRAMES_IN_FLIGHT * 20
         },
         vk::DescriptorPoolSize{
             vk::DescriptorType::eStorageBuffer,
-            FRAMES_IN_FLIGHT * 3
+            FRAMES_IN_FLIGHT * 30
         },
         vk::DescriptorPoolSize{
             vk::DescriptorType::eCombinedImageSampler,
-            2
+            2 * 10
         },
         vk::DescriptorPoolSize{
             vk::DescriptorType::eSampledImage,
@@ -1200,7 +1225,7 @@ export class VulkanRenderer{
         };
         vk::DescriptorPoolCreateInfo poolInfo;
         poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-        .setMaxSets(FRAMES_IN_FLIGHT * 10)
+        .setMaxSets(FRAMES_IN_FLIGHT * 50)
         .setPoolSizeCount(static_cast<uint32_t>(poolSizes.size()))
         .setPPoolSizes(poolSizes.data());
 
@@ -1697,52 +1722,63 @@ export class PipelineBuilder {
                 spvReflectDestroyShaderModule(&spvModule);
             }
         
-            // find the highest set number
-            u32 maxSetNumber = 0;
-            for (auto const& layout : descriptorSetLayouts)
-            {
-                if (layout.setIndex > maxSetNumber)
-                {
-                    maxSetNumber = layout.setIndex;
-                }
+           const u32 setCount = descriptorSetLayouts.empty() ? 0
+        : std::ranges::max(descriptorSetLayouts, {}, &VulkanRenderer::DescriptorSetInfo::setIndex).setIndex + 1;
+
+        std::vector<VulkanRenderer::DescriptorSetInfo> finalSetLayouts(setCount);
+        for (u32 setIndex = 0; setIndex < setCount; ++setIndex) {
+            finalSetLayouts[setIndex].setIndex = setIndex;
+        }
+
+    for (const auto& reflectedSet : descriptorSetLayouts) {
+        auto& mergedSet = finalSetLayouts[reflectedSet.setIndex];
+
+            for (const auto& reflectedBinding : reflectedSet.layoutBindings) {
+                auto existing = std::ranges::find(
+                mergedSet.layoutBindings,
+                reflectedBinding.binding,
+                &vk::DescriptorSetLayoutBinding::binding);
+
+            if (existing == mergedSet.layoutBindings.end()) {
+                mergedSet.layoutBindings.push_back(reflectedBinding);
+                continue;
             }
 
-            for (auto& setInfo : descriptorSetLayouts) {
-                auto& layoutInfo = setInfo.layoutInfo;
-                layoutInfo.setBindingCount(
-                    static_cast<u32>(setInfo.layoutBindings.size()));
-                layoutInfo.setPBindings(setInfo.layoutBindings.data());
+            if (existing->descriptorType != reflectedBinding.descriptorType ||
+                existing->descriptorCount != reflectedBinding.descriptorCount) {
+                throw std::runtime_error("Conflicting descriptor declarations for the same set and binding");
             }
 
-            std::sort(descriptorSetLayouts.begin(), descriptorSetLayouts.end(), [](const VulkanRenderer::DescriptorSetInfo& a, const VulkanRenderer::DescriptorSetInfo& b) {
-                return a.setIndex < b.setIndex;
-            });
-     
-            DescriptorSetData descriptorSetData;
-       
-            for (auto const& setInfo : descriptorSetLayouts) {
-                descriptorSetData.layouts.emplace_back(renderer.getCurrentDevice(), setInfo.layoutInfo);
-        
+        existing->stageFlags |= reflectedBinding.stageFlags;
             }
-            
-            // but for some FUCKING REASON the p set layouts expects non-raii handles so we have to convert this shit 
-            std::vector<vk::DescriptorSetLayout> nonRaiiSetLayouts;
-            for (auto const& setLayout : descriptorSetData.layouts) {
-                nonRaiiSetLayouts.emplace_back(*setLayout);
+        }
+
+        DescriptorSetData descriptorSetData;
+        descriptorSetData.layouts.reserve(setCount);
+        descriptorSetData.descriptorSets.resize(setCount);
+
+        std::vector<vk::DescriptorSetLayout> nonRaiiSetLayouts;
+        nonRaiiSetLayouts.reserve(setCount);
+
+        for (u32 setIndex = 0; setIndex < setCount; ++setIndex) {
+            auto& setInfo = finalSetLayouts[setIndex];
+            setInfo.layoutInfo
+            .setBindingCount(static_cast<u32>(setInfo.layoutBindings.size()))
+            .setPBindings(setInfo.layoutBindings.data());
+
+        // Empty bindings create valid layouts for unused set numbers.
+        descriptorSetData.layouts.emplace_back(
+        renderer.getCurrentDevice(),
+        setInfo.layoutInfo);
+
+            nonRaiiSetLayouts.emplace_back(*descriptorSetData.layouts.back());
+            descriptorSetData.descriptorSets[setIndex] =
+            renderer.allocateDescriptorSets(descriptorSetData.layouts.back(), FRAMES_IN_FLIGHT);
             }
-      
 
-            pipelineConfig.pipelineLayoutInfo.setSetLayoutCount(maxSetNumber + 1);
-            pipelineConfig.pipelineLayoutInfo.setPSetLayouts(nonRaiiSetLayouts.data());
-
-            // allocate descriptor sets
-            descriptorSetData.descriptorSets.resize(descriptorSetData.layouts.size());
-            for (size_t i = 0; i < descriptorSetData.layouts.size(); ++i) {
-                if (descriptorSetData.layouts[i] == nullptr) continue;
-
-                descriptorSetData.descriptorSets[i] = renderer.allocateDescriptorSets(descriptorSetData.layouts[i], FRAMES_IN_FLIGHT);
-                
-            }
+            pipelineConfig.pipelineLayoutInfo
+            .setSetLayoutCount(setCount)
+            .setPSetLayouts(nonRaiiSetLayouts.data());
 
             pipelineConfig.pipelineLayoutInfo.setPushConstantRangeCount(static_cast<u32>(pipelineConfig.pushConstantRanges.size()));
             if (!pipelineConfig.pushConstantRanges.empty()) {

@@ -22,10 +22,22 @@ export class Raycast {
 
     auto testRayOnSphere(Ray ray, glm::dvec3 spherePosition, float radius )
     {
-        auto const distance_from_sphere = ray.start - spherePosition;
-          return 
-                pow(glm::dot(ray.raydir, distance_from_sphere), 2.0) -
-                (pow(glm::length(distance_from_sphere), 2.0) - radius);
+        const glm::dvec3 offset = ray.start - spherePosition;
+const double b = glm::dot(offset, ray.raydir);
+const double c = glm::dot(offset, offset) - double(radius) * radius;
+const double discriminant = b * b - c;
+
+if (discriminant < 0.0) {
+    return false;
+}
+
+const double farHit = -b + std::sqrt(discriminant);
+return farHit >= 0.0;
+
+        // auto const distance_from_sphere = ray.start - spherePosition;
+        //   return 
+        //         pow(glm::dot(ray.raydir, distance_from_sphere), 2.0) -
+        //         (pow(glm::length(distance_from_sphere), 2.0) - radius*radius);
     }
     private:
 

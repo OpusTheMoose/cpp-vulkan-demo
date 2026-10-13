@@ -36,11 +36,12 @@ export enum class CameraMovement
 export class Camera {
     public:
         Camera() = default;
-        Camera(glm::vec3 pos, glm::vec3 center, glm::vec2 screen_size, std::string label){
+        Camera(glm::dvec3 pos, glm::dvec3 center, glm::vec2 screen_size, double zoom, std::string label){
             this->pos = pos;
             this->center = center;
             this->label = label;
-            view = glm::lookAt(pos, center, glm::vec3(0.0, 1.0 , 0.0));
+            this->radius = zoom;
+            view = glm::lookAt(pos, center, glm::dvec3(0.0, 1.0 , 0.0));
             proj = glm::perspectiveRH_ZO(glm::radians(45.0f), 
                                         screen_size.x / screen_size.y, 
                                         static_cast<float>(nearPlane), 
@@ -55,35 +56,38 @@ export class Camera {
     auto getProjMatrix() ->  glm::mat4 {
         return proj;
     }
+    auto getCenter() -> const glm::dvec3 {
+        return center;
+    }
   
     auto zoom(const float zoomAmount) -> void {
      
-        constexpr float minRadius = 0.1;
-        constexpr float maxRadius = 1e9f;
+        constexpr double minRadius = 0.1;
+        constexpr double maxRadius = 1e9;
        //Flip so scroll up is zoom in
-       float factor = std::exp(zoomAmount * -1);
+       double factor = std::exp(zoomAmount * -1);
        radius *= factor;
        radius = glm::clamp(radius, minRadius, maxRadius);
     }
-    auto getZoom() const -> float {
+    auto getZoom() const -> double {
         return radius;
     }
 
      auto getEye() const {
      
-        const float x = center.x + radius * cos(polarAngle) * cos(azimuthAngle);
-        const float z = center.z + radius * cos(polarAngle) * sin(azimuthAngle);
-        const float y = center.y + radius * sin(polarAngle);
+        const double x = center.x + radius * cos(polarAngle) * cos(azimuthAngle);
+        const double z = center.z + radius * cos(polarAngle) * sin(azimuthAngle);
+        const double y = center.y + radius * sin(polarAngle);
 
-        return glm::vec3(x, y, z);
+        return glm::dvec3(x, y, z);
     }
-      auto getPosition() const -> glm::vec3 {
+      auto getPosition() const -> glm::dvec3 {
         return getEye();
     }
     auto update(const glm::vec2 screen_size)-> void
     {
      
-        view = glm::lookAt(getEye(), static_cast<glm::vec3>(center), glm::vec3(0.0, 1.0, 0.0));
+        view = glm::lookAt(getEye(), static_cast<glm::dvec3>(center), glm::dvec3(0.0, 1.0, 0.0));
         proj = glm::perspectiveRH_ZO(glm::radians(45.0f), 
         static_cast<float>(screen_size.x) / static_cast<float>(screen_size.y), 
         static_cast<float>(nearPlane), 
@@ -97,18 +101,18 @@ export class Camera {
         return label;
     }
     
-    auto rotateAzimuth(const float radians)
+    auto rotateAzimuth(const double radians)
     {
         azimuthAngle += radians;
 
-        constexpr float fullCircle = 2.0*glm::pi<float>();
-        azimuthAngle = fmodf(azimuthAngle, fullCircle);
+        constexpr double fullCircle = 2.0*glm::pi<double>();
+        azimuthAngle = fmod(azimuthAngle, fullCircle);
         if (azimuthAngle < 0.0) azimuthAngle += fullCircle;
     }
 
-    auto rotatePolar(const float radians) -> void {
+    auto rotatePolar(const double radians) -> void {
         polarAngle += radians;
-        constexpr float polarCap = glm::pi<float>() / 2.0f - 0.001f;
+        constexpr double polarCap = glm::pi<double>() / 2.0 - 0.001;
         if (polarAngle > polarCap) polarAngle = polarCap;
         if (polarAngle < -polarCap) polarAngle = -polarCap;
 
@@ -133,9 +137,9 @@ export class Camera {
         double nearPlane = 1.0e12f;
         double farPlane = 0.1f;
 
-        float azimuthAngle = 0.0f;
-        float polarAngle = glm::radians(45.0f);
-        float radius = 20.0f;
+        double azimuthAngle = 0.0;
+        double polarAngle = glm::radians(45.0);
+        double radius = 20.0;
 };
 
 export class CameraController {
@@ -173,17 +177,19 @@ export class CameraController {
             Camera* cam = getCamera(active_camera);
             cam->zoom(events.getMouseState().scroll_amount * 0.1);
    
-            constexpr float sensitivity = 0.005f; // radians per pixel
+            constexpr double sensitivity = 0.005f; // radians per pixel
 
             const auto& mouse = events.getMouseState();
             if (mouse.isMiddleButtonPressed() && !events.isKeyPressed("left shift")) {
                 cam->rotateAzimuth((mouse.mouse_x - mouse.prev_mouse_x) * sensitivity);
                 cam->rotatePolar((mouse.mouse_y - mouse.prev_mouse_y) * sensitivity);
+                
+               
             }
             if (events.isKeyPressed("left shift") && mouse.isMiddleButtonPressed())
             {
                 // Tie how far left/right we move to our zoom level
-                float move_sens = cam->getZoom() * 0.0005f;
+                double move_sens = cam->getZoom() * 0.0005;
                 auto const delta_x = mouse.mouse_x - mouse.prev_mouse_x;
                 auto const delta_y = mouse.mouse_y - mouse.prev_mouse_y;
 

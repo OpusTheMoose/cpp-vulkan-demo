@@ -91,8 +91,6 @@ export class Draw3D {
             .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
             .setViewportState(1, 1)
             .setMultisampleShading(false)
-            
-            
             .build();
 
             PipelineBuilder gridBuilder(renderer);
@@ -111,12 +109,30 @@ export class Draw3D {
             .setMultisampleSamples(vk::SampleCountFlagBits::e8)
             .build();
 
+            PipelineBuilder lineBuilder(renderer);
+            linePipeline = lineBuilder
+            .createFromExistingPipeline(pipelineBuilder)
+            .clearShaders()
+            .setShader("src/shaders/line.spv", vk::ShaderStageFlagBits::eVertex, "vertMain")
+            .setShader("src/shaders/line.spv", vk::ShaderStageFlagBits::eFragment, "fragMain")
+            .setCullMode(vk::CullModeFlagBits::eNone)
+            .setDepthTest(true)
+            .setDepthWrite(true)
+            .setPolygonMode(vk::PolygonMode::eFill)
+            .setInputAssembly(vk::PrimitiveTopology::eLineList)
+    
+            .setMultisampleSamples(vk::SampleCountFlagBits::e8)
+            .build();
+
             for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
                 renderer.uploadBuffer(TEMP_PIPELINE, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
                 renderer.uploadBuffer(gridFloor, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
                 renderer.uploadBuffer(TEMP_PIPELINE, lightBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
                renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
                 renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
+
+                renderer.uploadBuffer(linePipeline, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
+                renderer.uploadBuffer(linePipeline, instanceBuffers[PrimitiveType::LINE3D], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
   
             }
             
@@ -124,14 +140,15 @@ export class Draw3D {
         
             generateSphereData();
             generateQuadData();
-    
+            lineVertexBuffer = renderer.createDynamicVertexBuffer(sizeof(LineVertex) * 1000);
+
+
         }
 
         auto startDraw() {
             sphereInstanceData.clear();
             quadInstanceData.clear();
             lineVertices.clear();
-            lineIndices.clear();
 
         }
         // Submit for rendering
@@ -139,7 +156,7 @@ export class Draw3D {
 
         Mesh& sphere = meshes[PrimitiveType::SPHERE];
         std::vector<Light> lights;
-        lights.emplace_back(glm::vec3(1e8, 0.0, 0.0) - camera.getPosition(), 
+        lights.emplace_back(glm::vec3(1e8, 0.0, 0.0) - static_cast<glm::vec3>(camera.getPosition()), 
         glm::vec3(1.0, 1.0, 1.0));
         
         std::vector<DrawSubmission> drawCalls;
@@ -164,7 +181,7 @@ export class Draw3D {
         drawCalls.emplace_back(
             TEMP_PIPELINE,
             sphere.vertexBuffer,
-            sphere.indexBuffer,
+            &sphere.indexBuffer,
             sphereInstanceData, 
             std::monostate(),
             static_cast<u32>(sphere.getIndices().size()),
@@ -176,15 +193,25 @@ export class Draw3D {
          drawCalls.emplace_back(
             gridFloor,
             quad.vertexBuffer,
-            quad.indexBuffer,
+            &quad.indexBuffer,
             quadInstanceData, 
             quadInstanceData[0].model,
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())
            
         );
-      
 
+        drawCalls.emplace_back(
+            linePipeline,
+            lineVertexBuffer,
+            nullptr,
+            std::span<const InstanceData>{}, 
+            std::monostate(),
+            static_cast<u32>(lineVertices.size()),
+            1
+        );
+
+     
     
         renderer.drawFrame(drawCalls, ImGui::GetDrawData());
         
@@ -194,8 +221,6 @@ export class Draw3D {
        {
             lineVertices.emplace_back(start, color);
             lineVertices.emplace_back(end, color);
-            lineIndices.push_back(lineVertices.size() - 2);
-            lineIndices.push_back(lineVertices.size() - 1);
 
        }
 
@@ -354,6 +379,7 @@ export class Draw3D {
     PipelineBuilder pipelineBuilder;
     GraphicsPipeline TEMP_PIPELINE;
     GraphicsPipeline gridFloor;
+    GraphicsPipeline linePipeline;
 
     std::array<Mesh, static_cast<int>(PrimitiveType::QUAD) + 1> meshes;
     
@@ -363,13 +389,14 @@ export class Draw3D {
     // Buffers for each frame in flight
     Buffer lightBuffer; 
     Buffer passBuffer; // UNUSED (for now aga)
-    Buffer uniformBuffer;   
+    Buffer uniformBuffer;  
+    
+    //temp
+    Buffer lineVertexBuffer;
     
     Texture texture; // temporary, for testing
 
     std::vector<LineVertex> lineVertices;
-    std::vector<u16> lineIndices;    
-
     std::vector<InstanceData> sphereInstanceData;
     std::vector<InstanceData> quadInstanceData;
   

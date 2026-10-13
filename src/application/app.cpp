@@ -31,7 +31,9 @@ import mesh;
 import simulation;
 import raycast;
 
-
+constexpr std::string doubleToScientific(double value) {
+   return std::format("{:.0e} ", value);
+}
 export class Application {
     public:
         Application() : window(800, 600, "Game"), 
@@ -42,9 +44,10 @@ export class Application {
                         })
             {
            camera_controller.registerCamera(
-            Camera(glm::vec3(0.0f, 0.0f, 0.0f), 
-            glm::vec3(0.0f, 0.0f, 0.0f), 
+            Camera(glm::dvec3(0.0f, 0.0f, 0.0f), 
+            glm::dvec3(0.0f, 0.0f, 0.0f), 
             glm::vec2(800.0, 600.0), 
+            4e7f,
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
 
@@ -74,6 +77,10 @@ export class Application {
                     ZoneScopedN("Poll events");
                     event_manager.pollEvents();
                 }
+                 i32 w, h;
+                SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
+                camera_controller.getActiveCamera()->update(glm::vec2(w, h));
+                camera_controller.updateActiveCamera(event_manager);
                 
                 if (event_manager.isKeyPressed("escape"))
                 {
@@ -86,7 +93,8 @@ export class Application {
                 ImGui::NewFrame();
                 ImGui::Begin("Application Info");
                 ImGui::Text("FPS (%u samples): %0.1f", SAMPLES, fps);
-                ImGui::Text("Zoom: %.1f meters", camera_controller.getActiveCamera()->getZoom() );
+                auto zoomString = doubleToScientific(camera_controller.getActiveCamera()->getZoom());
+                ImGui::Text("Zoom: %s meters", zoomString.c_str());
                 ImGui::End();
 
                  
@@ -113,7 +121,7 @@ export class Application {
                 simulation.setSimulationSpeed(hrs * 3600.0 + minutes * 60 + seconds);
                 }
 
-                
+                Camera& activeCamera = *camera_controller.getActiveCamera();
                 draw.startDraw();
                 {
                     ZoneScopedN("Draw submission");
@@ -122,18 +130,15 @@ export class Application {
                         
                         SimulationObject object = simulation.getObjectFromId(i);
                         
-                        draw.drawSphere(object.position - static_cast<glm::dvec3>(camera_controller.getActiveCamera()->getPosition()) , object.radius);
+                        draw.drawSphere(object.position - static_cast<glm::dvec3>(activeCamera.getPosition()) , object.radius);
                     }
                 }
                 // Draws the grid
-                draw.drawQuad(glm::vec3(0.0, 0.0, 0.0) - camera_controller.getActiveCamera()->getPosition(), glm::vec3(50.0f + camera_controller.getActiveCamera()->getZoom()));
-                draw.endDraw(*camera_controller.getActiveCamera());
+                draw.drawQuad( activeCamera.getCenter() * glm::dvec3(1.0f, 0.0f, 1.0f) - static_cast<glm::dvec3>(activeCamera.getPosition()), glm::vec3(100.0f + activeCamera.getZoom()));
+                draw.endDraw(activeCamera);
                 
 
-                i32 w, h;
-                SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
-                camera_controller.getActiveCamera()->update(glm::vec2(w, h));
-                camera_controller.updateActiveCamera(event_manager);
+               
                
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
@@ -220,7 +225,9 @@ export class Application {
                 ImGui::Begin("Object");
                 ImGui::Text("Position: %lf, %lf, %lf m", selectedObject.position.x, selectedObject.position.y, selectedObject.position.z);
                 ImGui::Text("Velocity: %lf, %lf, %lf m/s", selectedObject.velocity.x, selectedObject.velocity.y, selectedObject.velocity.z);
-                ImGui::Text("Mass: %lf Kg", selectedObject.mass);
+                auto s = doubleToScientific(selectedObject.mass);
+                ImGui::Text("Mass: %s Kg", s.c_str());
+
 
 
                 ImGui::End();
@@ -240,13 +247,13 @@ export class Application {
              
                 auto const& objectData = simulation.getObjectFromId(i); 
 
-                const float discrim = 
+                const bool hit = 
                 raycast.testRayOnSphere(
                     Ray(nearPoint, farPoint), 
-                    objectData.position, 
+                    objectData.position - cameraPos, 
                     objectData.radius);
                   
-                if (discrim >= 0)
+                if (hit)
                 {
                     if (mouse.isLeftButtonPressed())
                     {
@@ -255,7 +262,7 @@ export class Application {
                     }
               
                 }
-                else if (discrim < 0 && state != SELECTED) {
+                else if (hit == false && state != SELECTED) {
                     state=NOT_HIGHLIGHTED;
                 }
      
