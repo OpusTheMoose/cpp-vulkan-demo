@@ -964,8 +964,8 @@ export class VulkanRenderer{
     std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(*surface);
     swapChainSurfaceFormat                             = chooseSwapSurfaceFormat(availableFormats);
 
-    std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(*surface);
-	vk::PresentModeKHR              presentMode           = chooseSwapPresentMode(availablePresentModes);
+   // std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(*surface);
+	vk::PresentModeKHR              presentMode           = chooseSwapPresentMode();
 
     vk::SwapchainCreateInfoKHR swapChainCreateInfo;
     swapChainCreateInfo.surface = *surface;
@@ -994,13 +994,14 @@ export class VulkanRenderer{
     return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
     }
 
-    vk::PresentModeKHR chooseSwapPresentMode(std::vector<vk::PresentModeKHR> const &availablePresentModes)
+    vk::PresentModeKHR chooseSwapPresentMode()
     {
-        assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) { return presentMode == vk::PresentModeKHR::eFifo; }));
-        return std::ranges::any_of(availablePresentModes,
-                               [](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; }) ?
-               vk::PresentModeKHR::eMailbox :
-               vk::PresentModeKHR::eFifo;
+        return vk::PresentModeKHR::eFifo;
+        // assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) { return presentMode == vk::PresentModeKHR::eFifo; }));
+        // return std::ranges::any_of(availablePresentModes,
+        //                        [](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; }) ?
+        //        vk::PresentModeKHR::eMailbox :
+        //        vk::PresentModeKHR::eFifo;
     }
     
     vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR const &capabilities)

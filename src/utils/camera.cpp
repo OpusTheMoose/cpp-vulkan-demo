@@ -2,6 +2,7 @@ module;
 
 #include <cassert>
 #include <cmath>
+#include <glm/ext/vector_double3.hpp>
 #include <glm/ext/vector_float3_precision.hpp>
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/ext/matrix_clip_space.hpp>
@@ -74,12 +75,7 @@ export class Camera {
     }
 
      auto getEye() const {
-     
-        const double x = center.x + radius * cos(polarAngle) * cos(azimuthAngle);
-        const double z = center.z + radius * cos(polarAngle) * sin(azimuthAngle);
-        const double y = center.y + radius * sin(polarAngle);
-
-        return glm::dvec3(x, y, z);
+        return eye;
     }
       auto getPosition() const -> glm::dvec3 {
         return getEye();
@@ -87,12 +83,20 @@ export class Camera {
     auto update(const glm::vec2 screen_size)-> void
     {
      
-        view = glm::lookAt(getEye(), static_cast<glm::dvec3>(center), glm::dvec3(0.0, 1.0, 0.0));
+         const double x = center.x + radius * cos(polarAngle) * cos(azimuthAngle);
+        const double z = center.z + radius * cos(polarAngle) * sin(azimuthAngle);
+        const double y = center.y + radius * sin(polarAngle);
+
+        eye = glm::dvec3(x, y, z);
+
+        view = glm::lookAt(eye, static_cast<glm::dvec3>(center), glm::dvec3(0.0, 1.0, 0.0));
         proj = glm::perspectiveRH_ZO(glm::radians(45.0f), 
         static_cast<float>(screen_size.x) / static_cast<float>(screen_size.y), 
         static_cast<float>(nearPlane), 
         static_cast<float>(farPlane));
         proj[1][1] *= -1; // Flip Y for vulkan
+
+       
 
     }
 
@@ -133,6 +137,7 @@ export class Camera {
         glm::mat4 proj;
         glm::dvec3 pos;
         glm::dvec3 center;
+        glm::dvec3 eye;
 
         double nearPlane = 1.0e12f;
         double farPlane = 0.1f;
@@ -172,7 +177,7 @@ export class CameraController {
             return &it->second;
 
         }
-        auto updateActiveCamera(EventManager &events)
+        auto updateActiveCamera(EventManager &events, glm::vec2 screen_size)
         {
             Camera* cam = getCamera(active_camera);
             cam->zoom(events.getMouseState().scroll_amount * 0.1);
@@ -201,6 +206,8 @@ export class CameraController {
                     delta_y *  move_sens, 
                     phi_hat.z * delta_x * move_sens));
             }
+
+            cam->update(screen_size);
          
         }
    

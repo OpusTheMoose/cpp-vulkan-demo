@@ -156,14 +156,13 @@ export class Draw3D {
 
         Mesh& sphere = meshes[PrimitiveType::SPHERE];
         std::vector<Light> lights;
-        lights.emplace_back(glm::vec3(1e8, 0.0, 0.0) - static_cast<glm::vec3>(camera.getPosition()), 
+        lights.emplace_back(glm::vec3(1e8, 0.0, 0.0), 
         glm::vec3(1.0, 1.0, 1.0));
         
         std::vector<DrawSubmission> drawCalls;
 
         // undo camera translations
         glm::mat4 view = camera.getViewMatrix();
-        view[3] = glm::vec4(0.0, 0.0, 0.0, 1.0);
 
         UniformBufferObject cameraUBO = {};
         cameraUBO.proj = camera.getProjMatrix();
@@ -184,7 +183,18 @@ export class Draw3D {
                 lineVertices.data(),
                     bytes);
         }
-       
+
+        Mesh& quad = meshes[PrimitiveType::QUAD];
+         drawCalls.emplace_back(
+            gridFloor,
+            quad.vertexBuffer,
+            &quad.indexBuffer,
+            quadInstanceData, 
+            quadInstanceData[0].model,
+            static_cast<u32>(quad.getIndices().size()),
+            static_cast<u32>(quadInstanceData.size())
+           
+        );
 
        
         drawCalls.emplace_back(
@@ -198,17 +208,7 @@ export class Draw3D {
             
         );
 
-        Mesh& quad = meshes[PrimitiveType::QUAD];
-         drawCalls.emplace_back(
-            gridFloor,
-            quad.vertexBuffer,
-            &quad.indexBuffer,
-            quadInstanceData, 
-            quadInstanceData[0].model,
-            static_cast<u32>(quad.getIndices().size()),
-            static_cast<u32>(quadInstanceData.size())
-           
-        );
+  
 
         drawCalls.emplace_back(
             linePipeline,

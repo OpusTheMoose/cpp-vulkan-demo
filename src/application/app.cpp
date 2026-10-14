@@ -79,9 +79,9 @@ export class Application {
                 }
                  i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
-                camera_controller.getActiveCamera()->update(glm::vec2(w, h));
-                camera_controller.updateActiveCamera(event_manager);
-                
+                camera_controller.updateActiveCamera(event_manager, glm::vec2(w, h));
+               
+           
                 if (event_manager.isKeyPressed("escape"))
                 {
                     window.setWindowOpen(false);
@@ -130,12 +130,17 @@ export class Application {
                         
                         SimulationObject object = simulation.getObjectFromId(i);
                         
-                        draw.drawSphere(object.position - static_cast<glm::dvec3>(activeCamera.getPosition()) , object.radius);
+                        draw.drawSphere(object.position  , object.radius);
+             
                     }
-                }
-                // draw.drawLine3D(glm::vec3(0.0, 1.0, 0.0), glm::vec3(1e9, 1.0, 0.0), glm::vec3(1.0, 0.0, 0.0));
-                drawGrid();
+                
+                    draw.drawQuad( glm::dvec3(0.0, 0.0, 0.0), glm::dvec3(1e8));
+
+                
                  draw.endDraw(activeCamera);
+                }
+
+ 
                 
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
@@ -157,9 +162,7 @@ export class Application {
         }
 
         inline auto drawGrid() -> void {
-            Camera& activeCamera = *camera_controller.getActiveCamera();
-            // Draws the grid
-            draw.drawQuad( activeCamera.getCenter() * glm::dvec3(1.0f, 0.0f, 1.0f) - static_cast<glm::dvec3>(activeCamera.getPosition()), glm::vec3(100.0f + activeCamera.getZoom()));
+         
 
         }
 
