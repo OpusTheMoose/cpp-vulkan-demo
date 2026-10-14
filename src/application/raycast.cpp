@@ -1,5 +1,6 @@
 module;
 #include <glm/glm.hpp>
+#include <print>
 export module raycast;
 import types;
 
@@ -23,16 +24,16 @@ export class Raycast {
     auto testRayOnSphere(Ray ray, glm::dvec3 spherePosition, float radius )
     {
         const glm::dvec3 offset = ray.start - spherePosition;
-const double b = glm::dot(offset, ray.raydir);
-const double c = glm::dot(offset, offset) - double(radius) * radius;
-const double discriminant = b * b - c;
+        const double b = glm::dot(offset, ray.raydir);
+        const double c = glm::dot(offset, offset) - double(radius) * radius;
+        const double discriminant = b * b - c;
 
-if (discriminant < 0.0) {
-    return false;
-}
+        if (discriminant < 0.0) {
+            return false;
+            }
 
-const double farHit = -b + std::sqrt(discriminant);
-return farHit >= 0.0;
+        const double farHit = -b + std::sqrt(discriminant);
+        return farHit >= 0.0;
 
         // auto const distance_from_sphere = ray.start - spherePosition;
         //   return 

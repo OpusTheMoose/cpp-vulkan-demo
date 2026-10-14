@@ -174,6 +174,15 @@ export class Draw3D {
             renderer.setUniform(cameraUBO, uniformBuffer, frame);
              renderer.setStorageBuffer(instanceBuffers[PrimitiveType::SPHERE], std::span<const InstanceData>(sphereInstanceData), frame, instanceBuffers[PrimitiveType::SPHERE].bufferSize);
             renderer.setStorageBuffer(lightBuffer, std::span<const Light>(lights), frame, lightBuffer.bufferSize);
+
+            const size_t bytes = lineVertices.size() * sizeof(LineVertex);
+            if (bytes > lineVertexBuffer.bufferSize) {
+                throw std::runtime_error("Dynamic vertex data exceeds buffer capacity");
+                }
+
+            std::memcpy(lineVertexBuffer.buffersMapped[frame],
+                lineVertices.data(),
+                    bytes);
         }
        
 

@@ -1721,7 +1721,7 @@ export class PipelineBuilder {
 
                 spvReflectDestroyShaderModule(&spvModule);
             }
-        
+        // everything down to allocate is AI because this would be a nightmare otherwise
            const u32 setCount = descriptorSetLayouts.empty() ? 0
         : std::ranges::max(descriptorSetLayouts, {}, &VulkanRenderer::DescriptorSetInfo::setIndex).setIndex + 1;
 

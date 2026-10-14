@@ -133,13 +133,10 @@ export class Application {
                         draw.drawSphere(object.position - static_cast<glm::dvec3>(activeCamera.getPosition()) , object.radius);
                     }
                 }
-                // Draws the grid
-                draw.drawQuad( activeCamera.getCenter() * glm::dvec3(1.0f, 0.0f, 1.0f) - static_cast<glm::dvec3>(activeCamera.getPosition()), glm::vec3(100.0f + activeCamera.getZoom()));
-                draw.endDraw(activeCamera);
+                // draw.drawLine3D(glm::vec3(0.0, 1.0, 0.0), glm::vec3(1e9, 1.0, 0.0), glm::vec3(1.0, 0.0, 0.0));
+                drawGrid();
+                 draw.endDraw(activeCamera);
                 
-
-               
-               
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
                 accum += dt;
@@ -157,6 +154,13 @@ export class Application {
 
             renderer.waitIdle();
             
+        }
+
+        inline auto drawGrid() -> void {
+            Camera& activeCamera = *camera_controller.getActiveCamera();
+            // Draws the grid
+            draw.drawQuad( activeCamera.getCenter() * glm::dvec3(1.0f, 0.0f, 1.0f) - static_cast<glm::dvec3>(activeCamera.getPosition()), glm::vec3(100.0f + activeCamera.getZoom()));
+
         }
 
         ~Application() {
@@ -237,6 +241,7 @@ export class Application {
             auto nearPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 0.0));
             auto farPoint = screenSpaceToWorldCoordinates(glm::vec3(mouse.mouse_x, mouse.mouse_y, 1.0));
             const auto cameraPos = camera_controller.getActiveCamera()->getPosition();
+            
             // convert to in-camera coords
             nearPoint -= cameraPos;
             farPoint -= cameraPos;
@@ -276,7 +281,7 @@ export class Application {
         auto screenSpaceToWorldCoordinates(glm::vec3 screenCoordinates) -> const glm::vec3 {
            
             
-            return glm::unProject(screenCoordinates,
+            return glm::unProjectZO(screenCoordinates,
             camera_controller.getActiveCamera()->getViewMatrix(),
             camera_controller.getActiveCamera()->getProjMatrix(), 
             glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
