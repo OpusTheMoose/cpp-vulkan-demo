@@ -2,6 +2,8 @@ module;
 
 #include <cstddef>
 #include <glm/ext/matrix_transform.hpp>
+#include <optional>
+#include <span>
 #include <string_view>
 #include <tuple>
 
@@ -23,13 +25,11 @@ module;
 #include <stdexcept>
 #include <vector>
 #include <print>
-#include <variant>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <vulkan/vulkan_to_string.hpp>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "../utils/stb_image.h"
 
@@ -115,14 +115,29 @@ export struct GraphicsPipeline {
 };
 
 
-using PushConstant = std::variant<std::monostate, glm::mat4>;
+export struct PushConstant {
+    std::vector<std::byte> data;
+    vk::ShaderStageFlags stage;
+    u32 offset = 0;
 
+    template <typename T> 
+   PushConstant(const T& value, vk::ShaderStageFlags stage, u32 offset = 0 )
+    {
+        auto bytes = std::as_bytes(std::span{&value, 1});
+        data = {bytes.begin(), bytes.end()};
+        this->stage = stage;
+        this->offset = offset;
+
+
+    };
+
+};
 export struct DrawSubmission {
     GraphicsPipeline const &pipelineInfo; 
     Buffer const& vertexBuffer;
     Buffer const* indexBuffer; 
-    std::span<const InstanceData> instanceData; 
-    PushConstant pushConstant;
+    std::span<const InstanceData> instanceData;
+    std::optional<PushConstant> pushConstant;
     u32 elementCount, instanceCount;
 };
 
@@ -711,17 +726,17 @@ export class VulkanRenderer{
                 commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.pipelineInfo.layout, setIndex, *draw.pipelineInfo.descriptorSetData.descriptorSets[setIndex][frameIndex], nullptr);
             }
 
-               
-
-            // Deduce type of push constant, if there is one
-            std::visit([&](auto& arg)
+            if (draw.pushConstant)
             {
-                using T = std::decay_t<decltype(arg)>;
-                if constexpr (!std::is_same_v<T, std::monostate>)
-                {
-                    commandBuffer.pushConstants<T>(*draw.pipelineInfo.layout, vk::ShaderStageFlagBits::eVertex, 0, arg);
-                }
-            }, draw.pushConstant );
+                commandBuffer.pushConstants(*draw.pipelineInfo.layout, 
+                    draw.pushConstant->stage, 
+                    draw.pushConstant->offset, 
+                    draw.pushConstant->data.size(),
+                    draw.pushConstant->data.data());
+                  
+    
+            }
+
         
             commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
             if  (draw.indexBuffer != nullptr)
@@ -870,14 +885,13 @@ export class VulkanRenderer{
                                                                        vk::PhysicalDeviceVulkan11Features,
                                                                        vk::PhysicalDeviceVulkan13Features,
                                                                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
-                                                                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-                                                                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+                                                                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR                                                                
                                                                        >();
   bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
                                   features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
                                   features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState &&
                                   features.template get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>().accelerationStructure &&
-                                  features.template get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>().rayTracingPipeline &&
+                                  
                                   features.template get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy;
                              
 
@@ -938,6 +952,7 @@ export class VulkanRenderer{
          featureChain.get<vk::PhysicalDeviceVulkan13Features>().synchronization2 = true;
         featureChain.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState = true;
         featureChain.get<vk::PhysicalDeviceFeatures2>().features.setSamplerAnisotropy(true);
+        featureChain.get<vk::PhysicalDeviceFeatures2>().features.setGeometryShader(true);
     
 
 
@@ -1623,7 +1638,11 @@ export class PipelineBuilder {
 
         PipelineBuilder& setPipelineSetLayouts(std::span<const vk::DescriptorSetLayout> handles) {pipelineConfig.pipelineLayoutInfo.setSetLayouts(handles); return *this; }
 
-        PipelineBuilder& clearShaders() {pipelineConfig.shaderStages.clear(); return *this;};
+        PipelineBuilder& clearShaders() {
+            pipelineConfig.shaderStages.clear(); 
+            pipelineConfig.pushConstantRanges.clear();
+            
+            return *this;};
         PipelineBuilder& setRenderingColorAttachmentCount(u32 count) {pipelineConfig.pipelineRenderingInfo.setColorAttachmentCount(count); return *this; }
         PipelineBuilder& setColorAttachmentFormats(std::span<const vk::Format> colorFormats) {
             pipelineConfig.colorAttachmentFormats.assign(colorFormats.begin(), colorFormats.end());

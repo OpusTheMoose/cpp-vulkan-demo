@@ -96,6 +96,8 @@ export class Camera {
         static_cast<float>(farPlane));
         proj[1][1] *= -1; // Flip Y for vulkan
 
+        viewport = screen_size;
+
        
 
     }
@@ -104,6 +106,7 @@ export class Camera {
     {
         return label;
     }
+    auto getViewport() -> glm::vec2 {return viewport; }
     
     auto rotateAzimuth(const double radians)
     {
@@ -138,6 +141,7 @@ export class Camera {
         glm::dvec3 pos;
         glm::dvec3 center;
         glm::dvec3 eye;
+        glm::vec2 viewport;
 
         double nearPlane = 1.0e12f;
         double farPlane = 0.1f;

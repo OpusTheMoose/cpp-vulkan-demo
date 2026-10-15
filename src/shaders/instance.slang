@@ -76,7 +76,7 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
     // specular
     float3 viewDir = normalize(-vertIn.worldPos);
     float3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+    float spec = pow(max(dot(-viewDir, reflectDir), 0.0), 32);
     float3 specular = 0.5 * spec * lights[0].color;
 
 

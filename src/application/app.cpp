@@ -68,6 +68,8 @@ export class Application {
             f64 fps = 0.0;
             float dt = 0.0;
             int hrs = 0, minutes = 0, seconds = 1;
+
+            bool gridToggleOn = true;
            while (window.isWindowOpen())
             {
                
@@ -95,6 +97,7 @@ export class Application {
                 ImGui::Text("FPS (%u samples): %0.1f", SAMPLES, fps);
                 auto zoomString = doubleToScientific(camera_controller.getActiveCamera()->getZoom());
                 ImGui::Text("Zoom: %s meters", zoomString.c_str());
+                ImGui::Checkbox("Toggle Grid", &gridToggleOn);
                 ImGui::End();
 
                  
@@ -134,7 +137,11 @@ export class Application {
              
                     }
                 
-                    draw.drawQuad( glm::dvec3(0.0, 0.0, 0.0), glm::dvec3(1e8));
+                    if (gridToggleOn)
+                    {
+                        draw.drawQuad( glm::dvec3(0.0, 0.0, 0.0), glm::dvec3(1e9));
+                    }
+                    draw.drawLine3D(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1e9, 0.0), glm::vec3(1.0, 1.0, 0.0));
 
                 
                  draw.endDraw(activeCamera);

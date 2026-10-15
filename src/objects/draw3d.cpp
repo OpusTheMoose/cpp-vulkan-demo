@@ -2,8 +2,11 @@ module;
 #include "imgui.h"
 #include "vulkan/vulkan.hpp"
 #include <array>
+#include <glm/ext/matrix_float4x4.hpp>
 #include <glm/fwd.hpp>
+#include <optional>
 #include <variant>
+#include <print>
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -115,12 +118,13 @@ export class Draw3D {
             .clearShaders()
             .setShader("src/shaders/line.spv", vk::ShaderStageFlagBits::eVertex, "vertMain")
             .setShader("src/shaders/line.spv", vk::ShaderStageFlagBits::eFragment, "fragMain")
+            .setShader("src/shaders/line.spv", vk::ShaderStageFlagBits::eGeometry, "geomMain")
             .setCullMode(vk::CullModeFlagBits::eNone)
             .setDepthTest(true)
             .setDepthWrite(true)
             .setPolygonMode(vk::PolygonMode::eFill)
             .setInputAssembly(vk::PrimitiveTopology::eLineList)
-    
+            .setVertexInputInfo(LineVertex::getBindingDescription(),LineVertex::getAttributeDescriptions())
             .setMultisampleSamples(vk::SampleCountFlagBits::e8)
             .build();
 
@@ -132,7 +136,7 @@ export class Draw3D {
                 renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
 
                 renderer.uploadBuffer(linePipeline, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
-                renderer.uploadBuffer(linePipeline, instanceBuffers[PrimitiveType::LINE3D], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
+                
   
             }
             
@@ -171,7 +175,8 @@ export class Draw3D {
         for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
             ZoneScopedN("Uploading buffers for frame");
             renderer.setUniform(cameraUBO, uniformBuffer, frame);
-             renderer.setStorageBuffer(instanceBuffers[PrimitiveType::SPHERE], std::span<const InstanceData>(sphereInstanceData), frame, instanceBuffers[PrimitiveType::SPHERE].bufferSize);
+            renderer.setStorageBuffer(instanceBuffers[PrimitiveType::SPHERE], std::span<const InstanceData>(sphereInstanceData), frame, instanceBuffers[PrimitiveType::SPHERE].bufferSize);
+      
             renderer.setStorageBuffer(lightBuffer, std::span<const Light>(lights), frame, lightBuffer.bufferSize);
 
             const size_t bytes = lineVertices.size() * sizeof(LineVertex);
@@ -183,18 +188,23 @@ export class Draw3D {
                 lineVertices.data(),
                     bytes);
         }
-
-        Mesh& quad = meshes[PrimitiveType::QUAD];
-         drawCalls.emplace_back(
+       
+        if (quadInstanceData.size() != 0)
+        {
+           
+            Mesh& quad = meshes[PrimitiveType::QUAD];
+       
+            drawCalls.emplace_back(
             gridFloor,
             quad.vertexBuffer,
             &quad.indexBuffer,
             quadInstanceData, 
-            quadInstanceData[0].model,
+            PushConstant(quadInstanceData[0].model, vk::ShaderStageFlagBits::eVertex, 0),
             static_cast<u32>(quad.getIndices().size()),
             static_cast<u32>(quadInstanceData.size())
            
-        );
+            );
+        }
 
        
         drawCalls.emplace_back(
@@ -202,20 +212,19 @@ export class Draw3D {
             sphere.vertexBuffer,
             &sphere.indexBuffer,
             sphereInstanceData, 
-            std::monostate(),
+            std::nullopt,
             static_cast<u32>(sphere.getIndices().size()),
             static_cast<u32>(sphereInstanceData.size())
             
         );
 
   
-
         drawCalls.emplace_back(
             linePipeline,
             lineVertexBuffer,
             nullptr,
-            std::span<const InstanceData>{}, 
-            std::monostate(),
+            std::span<const InstanceData>(),
+            PushConstant(camera.getViewport(), vk::ShaderStageFlagBits::eGeometry, 0),
             static_cast<u32>(lineVertices.size()),
             1
         );
@@ -230,6 +239,7 @@ export class Draw3D {
        {
             lineVertices.emplace_back(start, color);
             lineVertices.emplace_back(end, color);
+        
 
        }
 
@@ -408,6 +418,7 @@ export class Draw3D {
     std::vector<LineVertex> lineVertices;
     std::vector<InstanceData> sphereInstanceData;
     std::vector<InstanceData> quadInstanceData;
+    
   
 };
 

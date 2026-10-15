@@ -38,15 +38,19 @@ function(add_slang_shader_target TARGET)
   cmake_parse_arguments(SHADER "" "" "SOURCES" ${ARGN})
 
   set(SHADERS_DIR "${CMAKE_CURRENT_LIST_DIR}/src/shaders")
-  set(ENTRY_POINTS
-      -entry vertMain
-      -entry fragMain
-  )
   set(SPV_OUTPUTS)
 
   foreach(SHADER_SOURCE IN LISTS SHADER_SOURCES)
     get_filename_component(SHADER_NAME "${SHADER_SOURCE}" NAME_WE)
     set(SPV_OUTPUT "${SHADERS_DIR}/${SHADER_NAME}.spv")
+     set(SHADER_ENTRY_POINTS
+      -entry vertMain
+      -entry fragMain
+    )
+
+      if(SHADER_NAME STREQUAL "line")
+        list(APPEND SHADER_ENTRY_POINTS -entry geomMain)
+      endif()
 
     add_custom_command(
       OUTPUT "${SPV_OUTPUT}"
@@ -56,7 +60,7 @@ function(add_slang_shader_target TARGET)
               -profile spirv_1_4
               -emit-spirv-directly
               -fvk-use-entrypoint-name
-              ${ENTRY_POINTS}
+              ${SHADER_ENTRY_POINTS}
               -o "${SPV_OUTPUT}"
       DEPENDS "${SHADER_SOURCE}"
       WORKING_DIRECTORY "${SHADERS_DIR}"
