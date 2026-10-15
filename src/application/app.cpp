@@ -8,6 +8,7 @@ module;
 #include <print>
 #include <stop_token>
 #include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_raii.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
 #include <SDL3/SDL.h>
@@ -21,6 +22,7 @@ module;
 #include "imgui_impl_vulkan.h"
 
 export module app;
+import vertex;
 import window;
 import event;
 import types;
@@ -31,9 +33,104 @@ import mesh;
 import simulation;
 import raycast;
 
+
+class Grid {
+    public:
+        Grid(VulkanRenderer& renderer)
+        {
+            createMeshVertices(renderer);
+            createGridPipeline(renderer);
+            quad.setPosition(glm::vec3(0.0));
+            quad.setScale(glm::vec3(1e9));
+        }
+        auto& getMesh() {return quad; }
+        auto& getPipeline() {return gridPipeline; }
+        const auto& getBuffer() {return UBO; }
+
+    private:
+        auto createMeshVertices(VulkanRenderer &renderer) ->void {
+        std::vector<Vertex> quadVertices;
+        std::vector<u16> indices;
+        // top left
+        quadVertices.emplace_back(glm::vec3{-1.0, 0.0, 1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{0.0, 0.0}, glm::vec3{0.0, 1.0, 0.0} );
+        // bottom left
+        quadVertices.emplace_back(glm::vec3{-1.0, 0.0, -1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{0.0, 1.0}, glm::vec3{0.0, 1.0, 0.0} );
+        // bottom right
+        quadVertices.emplace_back(glm::vec3{1.0, 0.0, -1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 1.0}, glm::vec3{0.0, 1.0, 0.0} );
+        // top right
+        quadVertices.emplace_back(glm::vec3{1.0, 0.0, 1.0}, glm::vec3{1.0, 1.0, 1.0}, glm::vec2{1.0, 0.0}, glm::vec3{0.0, 1.0, 0.0} );
+
+        indices = {
+            0, 2, 1, 0, 3, 2
+        };
+      
+        quad.upload(quadVertices, indices);
+        quad.vertexBuffer = renderer.createVertexBuffer(quadVertices.data(), quadVertices.size() * sizeof(Vertex));
+        quad.indexBuffer = renderer.createIndexBuffer(indices.data(), indices.size() * sizeof(u16));
+
+        }
+        auto createGridPipeline(VulkanRenderer& renderer) -> void {
+            PipelineBuilder pipelineBuilder(renderer);
+            gridPipeline = pipelineBuilder
+            .setColorAttachmentFormats(std::array{renderer.getSwapSurfaceFormat().format})
+            .setRenderingColorAttachmentCount(1)
+            .setColorBlendAttachment(false, vk::ColorComponentFlagBits::eR | 
+                                           vk::ColorComponentFlagBits::eG |
+                                           vk::ColorComponentFlagBits::eB |
+                                           vk::ColorComponentFlagBits::eA
+                                        
+                                        )
+            .setColorBlendState()
+            //Depth
+            .setDepthAttachmentFormat(vk::Format::eD32Sfloat)
+            .setDepthClampEnable(vk::False)
+            .setDepthTest(vk::True)
+            .setDepthWrite(true)
+            .setStencilTest(vk::False)
+            // Reasterizer
+            .setDepthBiasEnable(vk::False)
+            .setCullMode(vk::CullModeFlagBits::eNone)
+            .setPolygonMode(vk::PolygonMode::eFill)
+            .setFrontFace(vk::FrontFace::eCounterClockwise)
+            .setLineWidth(1.0f)
+            .setDiscardEnable(vk::False)
+            .setMultisampleSamples(vk::SampleCountFlagBits::e8)
+            // Input Assembly
+            .setInputAssembly(vk::PrimitiveTopology::eTriangleList)
+            .setShader("src/shaders/grid_floor.spv", vk::ShaderStageFlagBits::eVertex, "vertMain")
+            .setShader("src/shaders/grid_floor.spv", vk::ShaderStageFlagBits::eFragment, "fragMain")
+            .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
+            .setViewportState(1, 1)
+            .setMultisampleShading(false)
+            .build();
+
+            UBO = renderer.createUniformBuffers(sizeof(glm::mat4) * 2);
+
+            for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; frame++)
+            {
+                renderer.uploadBuffer(gridPipeline, 
+                    UBO, 
+                    vk::DescriptorType::eUniformBuffer, 
+                    0, 
+                    0, 
+                    frame);
+            }
+
+
+        }
+
+   
+        Buffer UBO;
+        Mesh quad;
+        GraphicsPipeline gridPipeline;
+
+};
+
 constexpr std::string doubleToScientific(double value) {
    return std::format("{:.0e} ", value);
 }
+
+
 export class Application {
     public:
         Application() : window(800, 600, "Game"), 
@@ -41,7 +138,8 @@ export class Application {
                         renderer(window), draw(renderer),
                         simulationThread([this](std::stop_token stop){
                             simulation.runSimulation(stop);
-                        })
+                        }),
+                        grid(renderer)
             {
            camera_controller.registerCamera(
             Camera(glm::dvec3(0.0f, 0.0f, 0.0f), 
@@ -52,8 +150,6 @@ export class Application {
             .setActiveCamera("OrbitCamera");
 
             imguiSetup(window.getSDLWindow());
-
-            
 
             }
   
@@ -139,7 +235,10 @@ export class Application {
                 
                     if (gridToggleOn)
                     {
-                        draw.drawQuad( glm::dvec3(0.0, 0.0, 0.0), glm::dvec3(1e9));
+                       // draw.drawQuad( glm::dvec3(0.0, 0.0, 0.0), glm::dvec3(1e9));
+                       draw.drawMesh(grid.getMesh(), grid.getPipeline(), PushConstant(grid.getMesh().getModelMatrix(), vk::ShaderStageFlagBits::eVertex, 0));
+                       
+                       draw.setUniform(std::array<glm::mat4, 2>{activeCamera.getViewMatrix(), activeCamera.getProjMatrix()}, grid.getBuffer());
                     }
                     draw.drawLine3D(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1e9, 0.0), glm::vec3(1.0, 1.0, 0.0));
 
@@ -168,10 +267,6 @@ export class Application {
             
         }
 
-        inline auto drawGrid() -> void {
-         
-
-        }
 
         ~Application() {
             ImGui_ImplVulkan_Shutdown();
@@ -296,7 +391,6 @@ export class Application {
             camera_controller.getActiveCamera()->getProjMatrix(), 
             glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
         }
-
     
         Window window;
         Raycast raycast;
@@ -306,10 +400,13 @@ export class Application {
         draw::Draw3D draw;
         CameraController camera_controller;
         std::jthread simulationThread;
+        GraphicsPipeline gridPipeline;
 
         SimulationObject selectedObject;
         SelectState state = NOT_HIGHLIGHTED;
         
+        Grid grid;
 
         
 };
+

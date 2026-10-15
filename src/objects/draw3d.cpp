@@ -30,7 +30,8 @@ export enum PrimitiveType {
         SPHERE = 1,
         CUBE = 2,
         CYLINDER = 3,
-        QUAD = 4
+        QUAD = 4,
+        CUSTOM = 5
 
 };
 
@@ -96,21 +97,21 @@ export class Draw3D {
             .setMultisampleShading(false)
             .build();
 
-            PipelineBuilder gridBuilder(renderer);
-            gridFloor = gridBuilder
-            .createFromExistingPipeline(pipelineBuilder)
-            .clearShaders()
-            .setShader("src/shaders/grid_floor.spv",
-               vk::ShaderStageFlagBits::eVertex,
-               "vertMain")
-            .setShader("src/shaders/grid_floor.spv",
-               vk::ShaderStageFlagBits::eFragment,
-               "fragMain") 
-            .setCullMode(vk::CullModeFlagBits::eNone)
-            .setDepthTest(true)
-            .setDepthWrite(true)
-            .setMultisampleSamples(vk::SampleCountFlagBits::e8)
-            .build();
+            // PipelineBuilder gridBuilder(renderer);
+            // gridFloor = gridBuilder
+            // .createFromExistingPipeline(pipelineBuilder)
+            // .clearShaders()
+            // .setShader("src/shaders/grid_floor.spv",
+            //    vk::ShaderStageFlagBits::eVertex,
+            //    "vertMain")
+            // .setShader("src/shaders/grid_floor.spv",
+            //    vk::ShaderStageFlagBits::eFragment,
+            //    "fragMain") 
+            // .setCullMode(vk::CullModeFlagBits::eNone)
+            // .setDepthTest(true)
+            // .setDepthWrite(true)
+            // .setMultisampleSamples(vk::SampleCountFlagBits::e8)
+            // .build();
 
             PipelineBuilder lineBuilder(renderer);
             linePipeline = lineBuilder
@@ -130,7 +131,7 @@ export class Draw3D {
 
             for (u32 frame = 0; frame < FRAMES_IN_FLIGHT; ++frame) {
                 renderer.uploadBuffer(TEMP_PIPELINE, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
-                renderer.uploadBuffer(gridFloor, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
+                
                 renderer.uploadBuffer(TEMP_PIPELINE, lightBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
                renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
                 renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
@@ -163,7 +164,7 @@ export class Draw3D {
         lights.emplace_back(glm::vec3(1e8, 0.0, 0.0), 
         glm::vec3(1.0, 1.0, 1.0));
         
-        std::vector<DrawSubmission> drawCalls;
+        
 
         // undo camera translations
         glm::mat4 view = camera.getViewMatrix();
@@ -189,24 +190,6 @@ export class Draw3D {
                     bytes);
         }
        
-        if (quadInstanceData.size() != 0)
-        {
-           
-            Mesh& quad = meshes[PrimitiveType::QUAD];
-       
-            drawCalls.emplace_back(
-            gridFloor,
-            quad.vertexBuffer,
-            &quad.indexBuffer,
-            quadInstanceData, 
-            PushConstant(quadInstanceData[0].model, vk::ShaderStageFlagBits::eVertex, 0),
-            static_cast<u32>(quad.getIndices().size()),
-            static_cast<u32>(quadInstanceData.size())
-           
-            );
-        }
-
-       
         drawCalls.emplace_back(
             TEMP_PIPELINE,
             sphere.vertexBuffer,
@@ -222,7 +205,7 @@ export class Draw3D {
         drawCalls.emplace_back(
             linePipeline,
             lineVertexBuffer,
-            nullptr,
+            std::nullopt, 
             std::span<const InstanceData>(),
             PushConstant(camera.getViewport(), vk::ShaderStageFlagBits::eGeometry, 0),
             static_cast<u32>(lineVertices.size()),
@@ -232,6 +215,7 @@ export class Draw3D {
      
     
         renderer.drawFrame(drawCalls, ImGui::GetDrawData());
+        drawCalls.clear();
         
        }
 
@@ -260,6 +244,30 @@ export class Draw3D {
                 );
        }
 
+       
+       auto drawMesh(Mesh& mesh, GraphicsPipeline &pipeline, std::optional<PushConstant> pc)
+       {
+
+            drawCalls.emplace_back(
+                pipeline,
+                mesh.vertexBuffer,
+                &mesh.indexBuffer,
+                std::span<const InstanceData>(),
+                pc,
+                mesh.getIndices().size(),
+                1
+            );
+
+       }
+
+       template <typename T>
+       auto setUniform(const T& data, const Buffer &buffer)
+       {
+            for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
+            {
+                renderer.setUniform(data, buffer, i);
+            }
+       }
        
 
               
@@ -396,8 +404,7 @@ export class Draw3D {
 
     VulkanRenderer& renderer;
     PipelineBuilder pipelineBuilder;
-    GraphicsPipeline TEMP_PIPELINE;
-    GraphicsPipeline gridFloor;
+    GraphicsPipeline TEMP_PIPELINE; 
     GraphicsPipeline linePipeline;
 
     std::array<Mesh, static_cast<int>(PrimitiveType::QUAD) + 1> meshes;
@@ -418,6 +425,8 @@ export class Draw3D {
     std::vector<LineVertex> lineVertices;
     std::vector<InstanceData> sphereInstanceData;
     std::vector<InstanceData> quadInstanceData;
+
+    std::vector<DrawSubmission> drawCalls;
     
   
 };

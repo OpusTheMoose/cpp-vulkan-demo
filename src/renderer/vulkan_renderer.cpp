@@ -135,7 +135,7 @@ export struct PushConstant {
 export struct DrawSubmission {
     GraphicsPipeline const &pipelineInfo; 
     Buffer const& vertexBuffer;
-    Buffer const* indexBuffer; 
+    std::optional<const Buffer*> indexBuffer;
     std::span<const InstanceData> instanceData;
     std::optional<PushConstant> pushConstant;
     u32 elementCount, instanceCount;
@@ -739,9 +739,9 @@ export class VulkanRenderer{
 
         
             commandBuffer.bindVertexBuffers(0, *draw.vertexBuffer.buffers[0], {0}); 
-            if  (draw.indexBuffer != nullptr)
+            if  (draw.indexBuffer)
             {
-                commandBuffer.bindIndexBuffer(draw.indexBuffer->buffers[0], 0, vk::IndexType::eUint16);
+                commandBuffer.bindIndexBuffer(draw.indexBuffer.value()->buffers[0], 0, vk::IndexType::eUint16);
                 commandBuffer.drawIndexed(static_cast<u32>(draw.elementCount), draw.instanceCount, 0, 0, 0);
             }
             else
