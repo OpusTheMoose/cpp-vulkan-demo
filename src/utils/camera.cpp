@@ -60,6 +60,9 @@ export class Camera {
     auto getCenter() -> const glm::dvec3 {
         return center;
     }
+    auto setCenter(const glm::dvec3 newCenter) -> void {
+        center = newCenter;
+    }
   
     auto zoom(const float zoomAmount) -> void {
      

@@ -45,6 +45,8 @@ export struct Light {
    alignas(16) glm::vec3 color;
 };
 
+constexpr u32 MAX_LINE_COUNT = 8192;
+
 
 
 export class Draw3D {
@@ -96,22 +98,7 @@ export class Draw3D {
             .setViewportState(1, 1)
             .setMultisampleShading(false)
             .build();
-
-            // PipelineBuilder gridBuilder(renderer);
-            // gridFloor = gridBuilder
-            // .createFromExistingPipeline(pipelineBuilder)
-            // .clearShaders()
-            // .setShader("src/shaders/grid_floor.spv",
-            //    vk::ShaderStageFlagBits::eVertex,
-            //    "vertMain")
-            // .setShader("src/shaders/grid_floor.spv",
-            //    vk::ShaderStageFlagBits::eFragment,
-            //    "fragMain") 
-            // .setCullMode(vk::CullModeFlagBits::eNone)
-            // .setDepthTest(true)
-            // .setDepthWrite(true)
-            // .setMultisampleSamples(vk::SampleCountFlagBits::e8)
-            // .build();
+ 
 
             PipelineBuilder lineBuilder(renderer);
             linePipeline = lineBuilder
@@ -145,7 +132,7 @@ export class Draw3D {
         
             generateSphereData();
             generateQuadData();
-            lineVertexBuffer = renderer.createDynamicVertexBuffer(sizeof(LineVertex) * 1000);
+            lineVertexBuffer = renderer.createDynamicVertexBuffer(sizeof(LineVertex) * MAX_LINE_COUNT);
 
 
         }
@@ -223,9 +210,14 @@ export class Draw3D {
        {
             lineVertices.emplace_back(start, color);
             lineVertices.emplace_back(end, color);
-        
-
        }
+
+       auto drawLines3D(const std::span<LineVertex> vertices)
+       {
+            lineVertices.insert(lineVertices.end(), vertices.begin(), vertices.end());
+       }
+
+     
 
        auto drawSphere(const glm::vec3 pos, const f32 radius) -> void {
         glm::mat4 modelMatrix = createModelMatrix(pos, glm::vec3{radius, radius, radius}, glm::quat(0.0f, 0.0f, 0.0f, 1.0));

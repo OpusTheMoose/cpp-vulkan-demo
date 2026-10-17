@@ -29,8 +29,8 @@ export class Window {
 
                this->sdl_window = std::unique_ptr<SDL_Window, SDL_WindowDeleter>(
                 SDL_CreateWindow(title.c_str(), this->width, this->height, 
-                SDL_WINDOW_ALWAYS_ON_TOP | 
-                SDL_WINDOW_RESIZABLE | 
+                SDL_WINDOW_ALWAYS_ON_TOP |  
+                SDL_WINDOW_RESIZABLE |
                 SDL_WINDOW_VULKAN));
 
                 if (!this->sdl_window.get()) throw std::runtime_error(std::string("Failed to create window") + SDL_GetError());

@@ -11,6 +11,7 @@ module;
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 #include <imgui.h>
+#include <tracy/TracyVulkan.hpp>
 #include <tracy/Tracy.hpp>
 
 #include "SDL3/SDL_error.h"
@@ -73,8 +74,6 @@ export struct InstanceData {
     // For correct alignment 
     std::array<glm::vec4, 3> normal;
 };
-
-
 
 
 
@@ -181,7 +180,7 @@ export class VulkanRenderer{
                 createDescriptorPool(); 
                 createCommandBuffers();
                 createSyncObjects();
-                // uploadImageTexture(Texture("textures/2k_mercury.jpg"), vk::MemoryPropertyFlagBits::eDeviceLocal);
+                
                 logger.log(LogLevel::INFO, "Vulkan renderer initialized");
             }
             catch(const std::exception &e)
@@ -216,6 +215,7 @@ export class VulkanRenderer{
 
         return vk::raii::ShaderModule(device, createInfo);
     }
+
 
     struct DescriptorSetInfo {
         u32 setIndex;
@@ -1011,7 +1011,7 @@ export class VulkanRenderer{
 
     vk::PresentModeKHR chooseSwapPresentMode()
     {
-        return vk::PresentModeKHR::eFifo;
+        return vk::PresentModeKHR::eMailbox;
         // assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) { return presentMode == vk::PresentModeKHR::eFifo; }));
         // return std::ranges::any_of(availablePresentModes,
         //                        [](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; }) ?

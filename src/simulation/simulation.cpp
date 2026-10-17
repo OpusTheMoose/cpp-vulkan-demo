@@ -3,9 +3,11 @@ module;
 #include <chrono>
 #include <cmath>
 #include <common/TracySystem.hpp>
+#include <memory>
 #include <mutex>
 #include <tracy/Tracy.hpp>
 #include <stop_token>
+#include <print>
 #include<glm/glm.hpp>
 #include <thread>
 export module simulation;
@@ -15,12 +17,16 @@ constexpr u32 num_of_objects = 2;
 
 constexpr double big_G = 6.674e-11;
 
+typedef double Kg;
+typedef double Meters;
+typedef glm::dvec3 MeterVec;
+typedef glm::dvec3 MeterSecVec;
 
 struct ObjectData {
-    std::array<glm::dvec3, num_of_objects> positions;
-    std::array<glm::dvec3, num_of_objects> velocites;
-    std::array<double, num_of_objects> masses;
-    std::array<double, num_of_objects> radius;
+    std::array<MeterVec, num_of_objects> positions;
+    std::array<MeterSecVec, num_of_objects> velocites;
+    std::array<Kg, num_of_objects> masses;
+    std::array<Meters, num_of_objects> radius;
 };
 // Single version of ObjectData, just a non-owning view of a single piece of simulation data
 export struct SimulationObject {
@@ -31,6 +37,9 @@ export struct SimulationObject {
     size_t id;
 };
 
+
+
+
 export class GravitySimulation {
     public:
         GravitySimulation(){
@@ -38,7 +47,7 @@ export class GravitySimulation {
             objects.positions[1] = glm::dvec3{0.0, 0.0, 363300000};
 
             objects.velocites[0] = glm::dvec3(0.0, 0.0, 0.0);
-            objects.velocites[1] = glm::dvec3{0.0, 0.0, 0.0};
+            objects.velocites[1] = glm::dvec3{1000.0, 0.0, 0.0};
 
             objects.masses[0] = 5.972e24; // Mass of earth
             objects.masses[1] = 7.348e22; // Mass of moon
@@ -76,6 +85,10 @@ export class GravitySimulation {
 
         auto update(double dt) -> void {
             std::scoped_lock lock(objects_mutex);
+            if(rateOfTime <= 0.0)
+            {
+                return;
+            } 
            for (size_t pos1 = 0; pos1 < num_of_objects; pos1++)
            {
                 glm::dvec3 accel_gravity = glm::dvec3{0.0};

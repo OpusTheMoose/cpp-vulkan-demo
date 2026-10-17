@@ -69,7 +69,7 @@ void geomMain(line VSOutput inputVertices[2],
         float2 normalPixels =
         normalize(float2(-directionPixels.y, directionPixels.x));
 
-        const float maxLineWidth = 20.0;
+        const float maxLineWidth = 0.5;
         // Convert half the requested pixel width back to NDC.
         float2 offsetNdc = normalPixels * (maxLineWidth / pc.viewport);
 

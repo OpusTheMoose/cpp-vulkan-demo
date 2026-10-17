@@ -1,5 +1,6 @@
 module;
 #include "SDL3/SDL_video.h"
+#include <array>
 #include <glm/ext/matrix_projection.hpp>
 #include <glm/ext/vector_double3.hpp>
 #include <glm/ext/vector_float3.hpp>
@@ -141,11 +142,28 @@ export class Application {
                         }),
                         grid(renderer)
             {
+
+            glm::dvec3 startCameraCenter = glm::dvec3(0.0, 0.0, 0.0);
+            glm::dvec3 startCameraPos = glm::dvec3(0.0, 0.0, 0.0);
+            double zoom = 1.0f;
+
+            if (simulation.getSimulationObjectCount() > 0)
+            {
+                auto object = simulation.getObjectFromId(0);
+                startCameraCenter = object.position;
+                startCameraPos = glm::dvec3(0.0); // doesnt actually matter, gets recaclulated 
+                zoom = object.radius * 10;
+
+                selectedObject = simulation.getObjectFromId(0);
+                focusedObject = selectedObject;
+
+                
+            }
            camera_controller.registerCamera(
-            Camera(glm::dvec3(0.0f, 0.0f, 0.0f), 
-            glm::dvec3(0.0f, 0.0f, 0.0f), 
+            Camera(startCameraPos, 
+            startCameraCenter, 
             glm::vec2(800.0, 600.0), 
-            4e7f,
+            zoom,
             "OrbitCamera"))
             .setActiveCamera("OrbitCamera");
 
@@ -166,6 +184,8 @@ export class Application {
             int hrs = 0, minutes = 0, seconds = 1;
 
             bool gridToggleOn = true;
+            bool paused = false;
+
            while (window.isWindowOpen())
             {
                
@@ -184,6 +204,7 @@ export class Application {
                 {
                     window.setWindowOpen(false);
                 } 
+                
                 {
                 ZoneScopedN("ImGUI Application Info")
                 ImGui_ImplVulkan_NewFrame();
@@ -210,6 +231,9 @@ export class Application {
                 ImGui::SetNextItemWidth(80);
                 ImGui::SameLine(220); ImGui::InputInt("S", &seconds);
 
+             
+                if(ImGui::Button("Pause Simulation")) paused = !paused;
+             
 
                 ImGui::End();
 
@@ -217,10 +241,11 @@ export class Application {
 
                 ImGui::Render();
 
-                simulation.setSimulationSpeed(hrs * 3600.0 + minutes * 60 + seconds);
+                simulation.setSimulationSpeed((hrs * 3600.0 + minutes * 60 + seconds) * !paused);
                 }
 
                 Camera& activeCamera = *camera_controller.getActiveCamera();
+                activeCamera.setCenter(focusedObject.position);
                 draw.startDraw();
                 {
                     ZoneScopedN("Draw submission");
@@ -229,25 +254,40 @@ export class Application {
                         
                         SimulationObject object = simulation.getObjectFromId(i);
                         
-                        draw.drawSphere(object.position  , object.radius);
+                        draw.drawSphere(object.position, object.radius);
              
                     }
                 
                     if (gridToggleOn)
                     {
-                       // draw.drawQuad( glm::dvec3(0.0, 0.0, 0.0), glm::dvec3(1e9));
                        draw.drawMesh(grid.getMesh(), grid.getPipeline(), PushConstant(grid.getMesh().getModelMatrix(), vk::ShaderStageFlagBits::eVertex, 0));
-                       
                        draw.setUniform(std::array<glm::mat4, 2>{activeCamera.getViewMatrix(), activeCamera.getProjMatrix()}, grid.getBuffer());
                     }
-                    draw.drawLine3D(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1e9, 0.0), glm::vec3(1.0, 1.0, 0.0));
+
+                    if(currentLineIndex >= 8192)
+                    {
+                        currentLineIndex %= 8192;
+                        positionHistory[currentLineIndex++] = simulation.getObjectFromId(1).position;
+                    }
+                    else {
+                        positionHistory[currentLineIndex++] = simulation.getObjectFromId(1).position;
+             
+                    }
+
+
+                    for (u32 i = 0; i < 8192; i +=2)
+                    {
+                         draw.drawLine3D(positionHistory[i], positionHistory[i + 1], glm::vec3(1.0, 0.0, 0.0));
+                    }
+                   
+
 
                 
                  draw.endDraw(activeCamera);
                 }
 
- 
-                
+                focusedObject = simulation.getObjectFromId(focusedObject.id);
+
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
                 accum += dt;
@@ -324,21 +364,25 @@ export class Application {
         enum SelectState {
             NOT_HIGHLIGHTED,
             HIGHLIGHTED_NOT_SELECTED,
-            SELECTED
+            SELECTED 
         };
 
         auto selectObject() -> void {
 
             if(state==SELECTED){
+
                 selectedObject =  simulation.getObjectFromId(selectedObject.id);
                 ImGui::Begin("Object");
                 ImGui::Text("Position: %lf, %lf, %lf m", selectedObject.position.x, selectedObject.position.y, selectedObject.position.z);
                 ImGui::Text("Velocity: %lf, %lf, %lf m/s", selectedObject.velocity.x, selectedObject.velocity.y, selectedObject.velocity.z);
                 auto s = doubleToScientific(selectedObject.mass);
                 ImGui::Text("Mass: %s Kg", s.c_str());
-
-
-
+                if(ImGui::Button("Focus"))
+                {
+                    camera_controller.getActiveCamera()->setCenter(selectedObject.position);
+                    focusedObject = selectedObject; 
+                    
+                }
                 ImGui::End();
             }
 
@@ -368,11 +412,11 @@ export class Application {
                     if (mouse.isLeftButtonPressed())
                     {
                         selectedObject = simulation.getObjectFromId(i);
-                        state = SELECTED;
+                         state = SELECTED;
                     }
               
                 }
-                else if (hit == false && state != SELECTED) {
+                else if (hit == false && (state != SELECTED)) {
                     state=NOT_HIGHLIGHTED;
                 }
      
@@ -383,7 +427,7 @@ export class Application {
 
         }
 
-        auto screenSpaceToWorldCoordinates(glm::vec3 screenCoordinates) -> const glm::vec3 {
+        auto screenSpaceToWorldCoordinates(const glm::vec3 screenCoordinates) -> const glm::vec3 {
            
             
             return glm::unProjectZO(screenCoordinates,
@@ -403,9 +447,13 @@ export class Application {
         GraphicsPipeline gridPipeline;
 
         SimulationObject selectedObject;
+        SimulationObject  focusedObject;
         SelectState state = NOT_HIGHLIGHTED;
         
         Grid grid;
+
+        std::array<glm::vec3, 8192> positionHistory{glm::vec3(0.0)};
+        u32 currentLineIndex = 0;
 
         
 };
