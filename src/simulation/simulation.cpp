@@ -3,11 +3,9 @@ module;
 #include <chrono>
 #include <cmath>
 #include <common/TracySystem.hpp>
-#include <memory>
 #include <mutex>
 #include <tracy/Tracy.hpp>
 #include <stop_token>
-#include <print>
 #include<glm/glm.hpp>
 #include <thread>
 export module simulation;

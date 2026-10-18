@@ -259,7 +259,7 @@ export class Application {
                 }
 
                 Camera& activeCamera = *camera_controller.getActiveCamera();
-                activeCamera.setCenter(focusedObject.position);
+                
                 draw.startDraw();
                 {
                     ZoneScopedN("Draw submission");
@@ -281,13 +281,11 @@ export class Application {
 
                     traceOrbits(dt);
                    
-
-
-                
                  draw.endDraw(activeCamera);
                 }
-
+            
                 focusedObject = simulation.getObjectFromId(focusedObject.id);
+                activeCamera.setCenter(focusedObject.position);
 
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
@@ -371,12 +369,13 @@ export class Application {
 
         auto selectObject() -> void {
 
+            ZoneScopedN("Select object");
             if(state==SELECTED){
 
                 selectedObject =  simulation.getObjectFromId(selectedObject.id);
                 ImGui::Begin("Object");
                 ImGui::Text("Position: %lf, %lf, %lf m", selectedObject.position.x, selectedObject.position.y, selectedObject.position.z);
-                ImGui::Text("Velocity: %lf, %lf, %lf m/s", selectedObject.velocity.x, selectedObject.velocity.y, selectedObject.velocity.z);
+                ImGui::Text("Orbital Velocity : %lf m/s", glm::length(selectedObject.velocity));
                 auto s = doubleToScientific(selectedObject.mass);
                 ImGui::Text("Mass: %s Kg", s.c_str());
                 if(ImGui::Button("Focus"))
@@ -438,44 +437,45 @@ export class Application {
             glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
         }
 
+    
+
         float orbitTraceTimer = 1.0;
         auto traceOrbits(float dt) -> void {
-            orbitTraceTimer += dt;
-           // allocate 8192 positions for linse
-            // each object only gets 64 positions before it resets
-            // object ID 0 gets 0-63, ID 1 gets 64-127, etc
-          //  constexpr u32 VERTICES_PER_OBJECT = 8192 / MAX_OBJECT_COUNT;
+            ZoneScopedN("Trace orbits");
+
             auto const simulationObjectCount = simulation.getSimulationObjectCount();
-           
-        
+
+            constexpr size_t MAX_LINE_VERTICES = 8192;
+            const size_t MAX_ORBIT_SEGMENTS =
+            MAX_LINE_VERTICES / (2 * simulationObjectCount);
+            const size_t MAX_ORBIT_POINTS = MAX_ORBIT_SEGMENTS + 1;
+
+            orbitTraceTimer += dt;
+  
             for (u32 i = 0; i < simulationObjectCount; i++)
             {
                 SimulationObject object = simulation.getObjectFromId(i);
+                auto &history = positionHistory[i];
                 if (orbitTraceTimer >= 1.0)
                 {
-                    positionHistory[i].push_back(object.position);
-                    
-                    
+                    history.push_back(object.position);
+                    if (history.size() > MAX_ORBIT_POINTS)
+                    {
+                        history.erase(history.begin());
+                    }
+        
                 }
 
-                for (u32 j = 0; j < positionHistory[i].size() - 1; j++)
+                for (u32 j = 1; j < positionHistory[i].size(); j++)
                 {
-                    draw.drawLine3D(positionHistory[i][j], positionHistory[i][j+1], glm::vec3(1.0, 0.0, 0.0));
+                    draw.drawLine3D(history[j - 1], history[j], glm::vec3(1.0, 0.0, 0.0));
 
                 }
-                positionHistory[i].back() = object.position;
-                
-              
+                if (!history.empty()) positionHistory[i].back() = object.position;
                 
             }
             if (orbitTraceTimer >= 1.0) orbitTraceTimer = 0.0;
-            // SimulationObject object = simulation.getObjectFromId(1);
-            //  positionHistory.back() = object.position;
-            // add a new line segment after a second has passed
-        
-  
               
-
         }
     
         Window window;

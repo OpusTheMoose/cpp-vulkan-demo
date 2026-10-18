@@ -1011,7 +1011,7 @@ export class VulkanRenderer{
 
     vk::PresentModeKHR chooseSwapPresentMode()
     {
-        return vk::PresentModeKHR::eMailbox;
+        return vk::PresentModeKHR::eFifo;
         // assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) { return presentMode == vk::PresentModeKHR::eFifo; }));
         // return std::ranges::any_of(availablePresentModes,
         //                        [](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; }) ?
