@@ -8,6 +8,7 @@ module;
 #include <glm/glm.hpp>
 #include <print>
 #include <stop_token>
+#include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -33,6 +34,8 @@ import draw3d;
 import mesh;
 import simulation;
 import raycast;
+
+constexpr u32 MAX_OBJECT_COUNT = 128;
 
 
 class Grid {
@@ -147,7 +150,9 @@ export class Application {
             glm::dvec3 startCameraPos = glm::dvec3(0.0, 0.0, 0.0);
             double zoom = 1.0f;
 
-            if (simulation.getSimulationObjectCount() > 0)
+            const u32 simulationObjectCount = simulation.getSimulationObjectCount();
+
+            if (simulationObjectCount > 0)
             {
                 auto object = simulation.getObjectFromId(0);
                 startCameraCenter = object.position;
@@ -159,6 +164,10 @@ export class Application {
 
                 
             }
+            for (u32 i = 0; i < simulationObjectCount; i++)
+            {
+                positionHistory[i].push_back(simulation.getObjectFromId(i).position);
+            }
            camera_controller.registerCamera(
             Camera(startCameraPos, 
             startCameraCenter, 
@@ -169,7 +178,11 @@ export class Application {
 
             imguiSetup(window.getSDLWindow());
 
+
+
             }
+
+            
   
 
         void loop() {
@@ -179,6 +192,7 @@ export class Application {
 
             u32 sampleCount = 0;
             f64 accum = 0.0;
+            
             f64 fps = 0.0;
             float dt = 0.0;
             int hrs = 0, minutes = 0, seconds = 1;
@@ -255,6 +269,7 @@ export class Application {
                         SimulationObject object = simulation.getObjectFromId(i);
                         
                         draw.drawSphere(object.position, object.radius);
+                   
              
                     }
                 
@@ -264,21 +279,7 @@ export class Application {
                        draw.setUniform(std::array<glm::mat4, 2>{activeCamera.getViewMatrix(), activeCamera.getProjMatrix()}, grid.getBuffer());
                     }
 
-                    if(currentLineIndex >= 8192)
-                    {
-                        currentLineIndex %= 8192;
-                        positionHistory[currentLineIndex++] = simulation.getObjectFromId(1).position;
-                    }
-                    else {
-                        positionHistory[currentLineIndex++] = simulation.getObjectFromId(1).position;
-             
-                    }
-
-
-                    for (u32 i = 0; i < 8192; i +=2)
-                    {
-                         draw.drawLine3D(positionHistory[i], positionHistory[i + 1], glm::vec3(1.0, 0.0, 0.0));
-                    }
+                    traceOrbits(dt);
                    
 
 
@@ -291,6 +292,7 @@ export class Application {
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
                 accum += dt;
+               
                 sampleCount++;
                 if (sampleCount >= SAMPLES)
                 {
@@ -435,6 +437,46 @@ export class Application {
             camera_controller.getActiveCamera()->getProjMatrix(), 
             glm::vec4(0.0, 0.0, window.getFramebufferSize().first, window.getFramebufferSize().second));
         }
+
+        float orbitTraceTimer = 1.0;
+        auto traceOrbits(float dt) -> void {
+            orbitTraceTimer += dt;
+           // allocate 8192 positions for linse
+            // each object only gets 64 positions before it resets
+            // object ID 0 gets 0-63, ID 1 gets 64-127, etc
+          //  constexpr u32 VERTICES_PER_OBJECT = 8192 / MAX_OBJECT_COUNT;
+            auto const simulationObjectCount = simulation.getSimulationObjectCount();
+           
+        
+            for (u32 i = 0; i < simulationObjectCount; i++)
+            {
+                SimulationObject object = simulation.getObjectFromId(i);
+                if (orbitTraceTimer >= 1.0)
+                {
+                    positionHistory[i].push_back(object.position);
+                    
+                    
+                }
+
+                for (u32 j = 0; j < positionHistory[i].size() - 1; j++)
+                {
+                    draw.drawLine3D(positionHistory[i][j], positionHistory[i][j+1], glm::vec3(1.0, 0.0, 0.0));
+
+                }
+                positionHistory[i].back() = object.position;
+                
+              
+                
+            }
+            if (orbitTraceTimer >= 1.0) orbitTraceTimer = 0.0;
+            // SimulationObject object = simulation.getObjectFromId(1);
+            //  positionHistory.back() = object.position;
+            // add a new line segment after a second has passed
+        
+  
+              
+
+        }
     
         Window window;
         Raycast raycast;
@@ -452,8 +494,10 @@ export class Application {
         
         Grid grid;
 
-        std::array<glm::vec3, 8192> positionHistory{glm::vec3(0.0)};
-        u32 currentLineIndex = 0;
+        std::array<std::vector<glm::vec3>, 128> positionHistory;
+
+
+
 
         
 };
