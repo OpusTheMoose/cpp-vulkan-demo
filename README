@@ -11,3 +11,6 @@ Tracy profiler is included in the CMake. Run these commands to build:
 cmake -S build/_deps/tracy-src/profiler -B build/tracy-profiler -DCMAKE_BUILD_TYPE=Release
 cmake --build build/tracy-profiler --parallel
 ./build/tracy-profiler/tracy-profiler
+
+
+10/19/2026: 5% gain after removing a waitIdle() call when batching more per-frame data (depth and color buffers)

@@ -51,7 +51,7 @@ const std::vector<char const*> validationLayers = {
 // #ifdef NDEBUG
 // constexpr bool enableValidationLayers = false;
 // #else
-constexpr bool enableValidationLayers = true;
+constexpr bool enableValidationLayers = false;
 // #endif
 
 export constexpr i32 FRAMES_IN_FLIGHT = 2;
@@ -131,6 +131,17 @@ export struct PushConstant {
     };
 
 };
+
+struct FrameAttachments {
+    vk::raii::Image colorImage = nullptr;
+    vk::raii::DeviceMemory colorImageMemory = nullptr;
+    vk::raii::ImageView colorImageView = nullptr;
+
+    vk::raii::Image depthImage = nullptr;
+    vk::raii::DeviceMemory depthImageMemory = nullptr;
+    vk::raii::ImageView depthImageView = nullptr;
+    
+};
 export struct DrawSubmission {
     GraphicsPipeline const &pipelineInfo; 
     Buffer const& vertexBuffer;
@@ -174,11 +185,16 @@ export class VulkanRenderer{
                 createLogicalDevice();
                 createSwapChain();
                 createImageViews();
-                createColorResource();
-                createDepthResource(); 
+                createFrameAttachments();
                 createCommandPool(); 
                 createDescriptorPool(); 
                 createCommandBuffers();
+                tracyVkContext = TracyVkContext(
+                    *physicalDevice,
+                    *device,
+                    *graphicsQueue,
+                    *commandBuffers[0]
+                );
                 createSyncObjects();
                 
                 logger.log(LogLevel::INFO, "Vulkan renderer initialized");
@@ -187,6 +203,12 @@ export class VulkanRenderer{
             {
                 logger.log(LogLevel::CRITICAL, e.what());
 
+            }
+        }
+        ~VulkanRenderer(){
+            if (tracyVkContext)
+            {
+                TracyVkDestroy(tracyVkContext);
             }
         }
    
@@ -204,8 +226,7 @@ export class VulkanRenderer{
 
             createSwapChain();
             createImageViews();
-            createColorResource();
-            createDepthResource();
+            createFrameAttachments();
         }
 
     auto createShaderModule(const std::vector<char>& code) -> vk::raii::ShaderModule {
@@ -513,7 +534,7 @@ export class VulkanRenderer{
 		        {
 			        throw std::runtime_error("failed to wait for fence!");
 		        }   
-		        device.resetFences(*inFlightFences[frameIndex]);
+		      
             }
 
          
@@ -538,10 +559,6 @@ export class VulkanRenderer{
             commandBuffers[frameIndex].reset();
             recordCommandBuffer(drawCalls, drawData, imageIndex );
 
-            {
-                ZoneScopedN("GraphicsQueue wait idle");
-                graphicsQueue.waitIdle();  
-            }
            
             vk::PipelineStageFlags waitDestinationStageMask( vk::PipelineStageFlagBits::eColorAttachmentOutput );
             vk::SubmitInfo   submitInfo = {};
@@ -653,6 +670,8 @@ export class VulkanRenderer{
         ZoneScopedN("Record Command Buffer");
         auto &commandBuffer = commandBuffers[frameIndex];
         commandBuffer.begin({});
+        TracyVkCollect(tracyVkContext, *commandBuffer);
+        FrameAttachments &attachment = frameAttachments[frameIndex];
         transition_image_layout(
             swapChainImages[imageIndex], 
             vk::ImageLayout::eUndefined, 
@@ -664,7 +683,7 @@ export class VulkanRenderer{
             vk::ImageAspectFlagBits::eColor);
 
           transition_image_layout(
-        *depthImage,
+        *attachment.depthImage,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eDepthAttachmentOptimal,
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -674,7 +693,7 @@ export class VulkanRenderer{
         vk::ImageAspectFlagBits::eDepth);
 
         transition_image_layout(
-        *colorImage,
+        *attachment.colorImage,
       vk::ImageLayout::eUndefined,
       vk::ImageLayout::eColorAttachmentOptimal,
       vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -687,7 +706,7 @@ export class VulkanRenderer{
         vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
        vk::RenderingAttachmentInfo attachmentInfo = {};
        attachmentInfo.
-       setImageView(colorImageView)
+       setImageView(attachment.colorImageView)
        .setImageLayout(vk::ImageLayout::eColorAttachmentOptimal)
        .setResolveMode(vk::ResolveModeFlagBits::eAverage)
        .setResolveImageView(swapChainImageViews[imageIndex])
@@ -697,8 +716,7 @@ export class VulkanRenderer{
        .setClearValue(clearColor);
 
        vk::RenderingAttachmentInfo depthAttachmentInfo = {};
-       depthAttachmentInfo.setImageView(depthImageView)
-       .setImageView(depthImageView)
+       depthAttachmentInfo.setImageView(attachment.depthImageView)
        .setImageLayout(vk::ImageLayout::eDepthAttachmentOptimal)
        .setLoadOp(vk::AttachmentLoadOp::eClear)
        .setStoreOp(vk::AttachmentStoreOp::eDontCare)
@@ -711,10 +729,12 @@ export class VulkanRenderer{
         renderingInfo.setPColorAttachments(&attachmentInfo);
         renderingInfo.setPDepthAttachment(&depthAttachmentInfo);
 
+        TracyVkCollect(tracyVkContext, *commandBuffer);
         commandBuffer.beginRendering(renderingInfo);
-
-        commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
-        commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+        {
+            TracyVkZone(tracyVkContext, *commandBuffer, "Scene draws");
+            commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+            commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
         for (auto const& draw : drawCalls)
         {
@@ -749,6 +769,7 @@ export class VulkanRenderer{
                 commandBuffer.draw(static_cast<u32>(draw.elementCount), draw.instanceCount, 0, 0);
             }
             
+        }
         }
         {
             ZoneScopedN("ImGUI Render Draw data");
@@ -1011,7 +1032,7 @@ export class VulkanRenderer{
 
     vk::PresentModeKHR chooseSwapPresentMode()
     {
-        return vk::PresentModeKHR::eFifo;
+        return vk::PresentModeKHR::eMailbox;
         // assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) { return presentMode == vk::PresentModeKHR::eFifo; }));
         // return std::ranges::any_of(availablePresentModes,
         //                        [](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; }) ?
@@ -1086,6 +1107,7 @@ export class VulkanRenderer{
     vk::PipelineStageFlags2 dst_stage_mask,
     vk::ImageAspectFlags image_aspect_flags)
     {
+        ZoneScopedN("Transition image layout")
     vk::ImageSubresourceRange range = {};
     range.setAspectMask(image_aspect_flags)
          .setBaseMipLevel(0)
@@ -1136,12 +1158,31 @@ export class VulkanRenderer{
     auto cleanupSwapChain() -> void {
         ZoneScopedN("Cleanup swapchain");
         swapChainImageViews.clear();
-        
-        depthImageView = nullptr;
-        depthImage = nullptr;
-        depthImageMemory = nullptr;
+
+        for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
+        {
+            frameAttachments[i].colorImageView = nullptr;
+            frameAttachments[i].colorImage = nullptr;
+            frameAttachments[i].colorImageMemory = nullptr;
+            
+            frameAttachments[i].depthImageView = nullptr;
+            frameAttachments[i].depthImage = nullptr;
+            frameAttachments[i].depthImageMemory = nullptr;
+            
+        }
+
 
         swapChain = nullptr;
+    }
+
+    auto createFrameAttachments()-> void {
+        frameAttachments.resize(FRAMES_IN_FLIGHT);
+        for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
+        {
+            createDepthResource(frameAttachments[i]);
+            createColorResource(frameAttachments[i]);
+        }
+
     }
 
     auto copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & dstBuffer, vk::DeviceSize size) -> void
@@ -1306,16 +1347,17 @@ export class VulkanRenderer{
 		return {std::move(image), std::move(imageMemory)};
 	}
 
-    auto createDepthResource() -> void {
+    auto createDepthResource(FrameAttachments& attachment) -> void {
         vk::Format depthFormat = vk::Format::eD32Sfloat;
-        std::tie(depthImage, depthImageMemory) = createImage(swapChainExtent.width, swapChainExtent.height, msaaSamples, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
-        depthImageView  = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
+        std::tie(attachment.depthImage, attachment.depthImageMemory) = createImage(swapChainExtent.width, swapChainExtent.height, msaaSamples, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        attachment.depthImageView  
+        = createImageView(attachment.depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
     }
 
-    auto createColorResource() -> void {
+    auto createColorResource(FrameAttachments& attachment) -> void {
         vk::Format colorFormat = swapChainSurfaceFormat.format;
 
-        std::tie(colorImage, colorImageMemory) = createImage(
+        std::tie(attachment.colorImage, attachment.colorImageMemory) = createImage(
             swapChainExtent.width,
             swapChainExtent.height,
             msaaSamples,
@@ -1323,7 +1365,8 @@ export class VulkanRenderer{
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        colorImageView = createImageView(colorImage, colorFormat, vk::ImageAspectFlagBits::eColor);
+        attachment.colorImageView = 
+        createImageView(attachment.colorImage, colorFormat, vk::ImageAspectFlagBits::eColor);
         
 
     }
@@ -1456,17 +1499,9 @@ export class VulkanRenderer{
     vk::raii::PhysicalDevice physicalDevice = nullptr;
     vk::raii::Device device = nullptr;
 
-    vk::raii::Image colorImage = nullptr;
-    vk::raii::DeviceMemory colorImageMemory = nullptr;
-    vk::raii::ImageView colorImageView = nullptr;
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e8;
-    
 
     vk::raii::CommandPool  commandPool = nullptr; 
-
-    vk::raii::Image depthImage = nullptr;
-    vk::raii::DeviceMemory depthImageMemory = nullptr;
-    vk::raii::ImageView depthImageView = nullptr;
 
     vk::raii::DescriptorPool descriptorPool = nullptr;
     
@@ -1475,6 +1510,7 @@ export class VulkanRenderer{
     std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
     std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
     std::vector<vk::raii::Fence> inFlightFences;
+    std::vector<FrameAttachments> frameAttachments;
 
 
     u32 queueIndex = 0;
@@ -1491,6 +1527,7 @@ export class VulkanRenderer{
     Logger logger;
     Window* window; 
     VkSurfaceKHR windowSurface;
+    TracyVkCtx tracyVkContext = nullptr;
 
 };
 

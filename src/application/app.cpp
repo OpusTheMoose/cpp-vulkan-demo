@@ -211,7 +211,7 @@ export class Application {
                 }
                  i32 w, h;
                 SDL_GetWindowSize(window.getSDLWindow(), &w, &h);
-                camera_controller.updateActiveCamera(event_manager, glm::vec2(w, h));
+                
                
            
                 if (event_manager.isKeyPressed("escape"))
@@ -286,6 +286,7 @@ export class Application {
             
                 focusedObject = simulation.getObjectFromId(focusedObject.id);
                 activeCamera.setCenter(focusedObject.position);
+                camera_controller.updateActiveCamera(event_manager, glm::vec2(w, h));
 
                 end = std::chrono::high_resolution_clock::now();
                 dt = std::chrono::duration<float>(end - start).count();
@@ -343,7 +344,7 @@ export class Application {
             initInfo.UseDynamicRendering = true;
             initInfo.PipelineInfoMain.RenderPass = nullptr;
             initInfo.PipelineInfoMain.Subpass = 0;
-            initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_8_BIT;
+            initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
 
             initInfo.CheckVkResultFn = [](VkResult result) {
