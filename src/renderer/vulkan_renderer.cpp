@@ -51,7 +51,7 @@ const std::vector<char const*> validationLayers = {
 // #ifdef NDEBUG
 // constexpr bool enableValidationLayers = false;
 // #else
-constexpr bool enableValidationLayers = false;
+constexpr bool enableValidationLayers = true;
 // #endif
 
 export constexpr i32 FRAMES_IN_FLIGHT = 2;
@@ -70,9 +70,10 @@ export struct Buffer {
 
 
 export struct InstanceData {
-    glm::mat4x4 model;
+  alignas(16)  glm::mat4x4 model;
     // For correct alignment 
-    std::array<glm::vec4, 3> normal;
+  alignas(16)  std::array<glm::vec4, 3> normal;
+  alignas(16)  i32 textureId;
 };
 
 
@@ -242,7 +243,33 @@ export class VulkanRenderer{
         u32 setIndex;
         vk::DescriptorSetLayoutCreateInfo layoutInfo;
         std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+        // THIS IS A BAD SOLUTION TO A STUPID PROBLEM. I HATE YOU VULKAN
+        // vk::DescriptorSetLayoutBindingFlagsCreateInfoEXT binding_flags;
+        // needs a pointer to flags for some reason so here this is
+        // auto setDescriptorIndexFlags() {
+
+        //     const vk::DescriptorBindingFlags bindingFlags =
+        //     vk::DescriptorBindingFlagBits::eVariableDescriptorCount |
+        //     vk::DescriptorBindingFlagBits::ePartiallyBoundEXT |
+        //     vk::DescriptorBindingFlagBits::eUpdateAfterBindEXT |
+        //     vk::DescriptorBindingFlagBits::eUpdateUnusedWhilePendingEXT;
+  
+        //     binding_flags.sType = vk::StructureType::eDescriptorSetLayoutBindingFlagsCreateInfoEXT;
+        //     binding_flags.setBindingCount(1)
+        //     .setBindingFlags(bindingFlags);
+
+
+        // }
     };
+
+    struct DescriptorIndexingInfo {
+        u32 setIndex;
+        u32 descriptorCount;
+
+        DescriptorIndexingInfo(u32 setIndex_, u32 descriptorCount_)
+            : setIndex(setIndex_), descriptorCount(descriptorCount_) {}
+    };
+
 
     template <typename T>
     auto setUniform(T uniform, const Buffer& uniformBuffer, u32 frame) -> void {
@@ -304,12 +331,16 @@ export class VulkanRenderer{
 
             for (uint32_t j = 0; j < set->binding_count; ++j) {
                 const SpvReflectDescriptorBinding* binding = set->bindings[j];
+                
                 setLayouts.back().layoutBindings.emplace_back();
                 auto& layoutBinding = setLayouts.back().layoutBindings.back();
                 layoutBinding.setBinding(binding->binding)
                     .setDescriptorType(static_cast<vk::DescriptorType>(binding->descriptor_type))
                     .setDescriptorCount(1)
                     .setStageFlags(stage);
+
+                  
+
     
                 for (u32 i_dim = 0; i_dim < binding->array.dims_count; ++i_dim) {
                     layoutBinding.descriptorCount *= binding->array.dims[i_dim];
@@ -407,6 +438,7 @@ export class VulkanRenderer{
             .setDstBinding(binding)
             .setDescriptorCount(1)
             .setDescriptorType(descriptorType)
+            .setDstArrayElement(0)
             .setPImageInfo(&imageInfo);
 
         device.updateDescriptorSets(write, {});
@@ -603,7 +635,7 @@ export class VulkanRenderer{
         }
 
 
-    auto allocateDescriptorSets(vk::raii::DescriptorSetLayout const& layout, u32 count) -> std::vector<vk::raii::DescriptorSet>
+    auto allocateDescriptorSets(vk::raii::DescriptorSetLayout const& layout, u32 count, u32 variableDescriptorCount = 0) -> std::vector<vk::raii::DescriptorSet>
     {
         std::vector<vk::DescriptorSetLayout> layouts(count, layout);
         vk::DescriptorSetAllocateInfo allocInfo;
@@ -611,6 +643,13 @@ export class VulkanRenderer{
         allocInfo.setDescriptorPool(descriptorPool)
             .setDescriptorSetCount(static_cast<u32>(layouts.size()))
             .setPSetLayouts(layouts.data());
+        vk::DescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo;
+        std::vector<u32> variableDescriptorCounts;
+        if (variableDescriptorCount != 0) {
+            variableDescriptorCounts.assign(count, variableDescriptorCount);
+            variableCountInfo.setDescriptorCounts(variableDescriptorCounts);
+            allocInfo.setPNext(&variableCountInfo);
+        }
         return device.allocateDescriptorSets(allocInfo);
     } 
 
@@ -904,15 +943,20 @@ export class VulkanRenderer{
   // Check if the physicalDevice supports the required features (shader draw parameters, dynamic rendering and extended dynamic state)
   auto features                 = physicalDevice.template getFeatures2<vk::PhysicalDeviceFeatures2,
                                                                        vk::PhysicalDeviceVulkan11Features,
+                                                                       vk::PhysicalDeviceVulkan12Features,
                                                                        vk::PhysicalDeviceVulkan13Features,
-                                                                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
-                                                                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR                                                                
+                                                                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT                                                       
                                                                        >();
   bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
                                   features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
                                   features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState &&
-                                  features.template get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>().accelerationStructure &&
-                                  
+                                  features.template get<vk::PhysicalDeviceVulkan12Features>().descriptorIndexing &&
+                                  features.template get<vk::PhysicalDeviceVulkan12Features>().descriptorBindingVariableDescriptorCount &&
+                                  features.template get<vk::PhysicalDeviceVulkan12Features>().shaderSampledImageArrayNonUniformIndexing &&
+                                  features.template get<vk::PhysicalDeviceVulkan12Features>().runtimeDescriptorArray &&
+                                  features.template get<vk::PhysicalDeviceVulkan12Features>().descriptorBindingSampledImageUpdateAfterBind &&
+                                  features.template get<vk::PhysicalDeviceVulkan12Features>().descriptorBindingUpdateUnusedWhilePending &&
+                                  features.template get<vk::PhysicalDeviceVulkan12Features>().descriptorBindingPartiallyBound && 
                                   features.template get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy;
                              
 
@@ -968,16 +1012,19 @@ export class VulkanRenderer{
                    vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain;
          featureChain.get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters = true;
-        featureChain.get<vk::PhysicalDeviceVulkan12Features>().bufferDeviceAddress = true;
          featureChain.get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering = true;
          featureChain.get<vk::PhysicalDeviceVulkan13Features>().synchronization2 = true;
         featureChain.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState = true;
         featureChain.get<vk::PhysicalDeviceFeatures2>().features.setSamplerAnisotropy(true);
         featureChain.get<vk::PhysicalDeviceFeatures2>().features.setGeometryShader(true);
-    
-
-
-
+        featureChain.get<vk::PhysicalDeviceVulkan12Features>()
+        .setRuntimeDescriptorArray(true)
+        .setShaderSampledImageArrayNonUniformIndexing(true)
+        .setDescriptorBindingVariableDescriptorCount(true)
+        .setBufferDeviceAddress(true)
+        .setDescriptorBindingSampledImageUpdateAfterBind(true)
+        .setDescriptorBindingUpdateUnusedWhilePending(true)
+        .setDescriptorBindingPartiallyBound(true);
 
         vk::DeviceCreateInfo deviceCreateInfo{};
         deviceCreateInfo.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>();
@@ -1273,7 +1320,7 @@ export class VulkanRenderer{
         },
         vk::DescriptorPoolSize{
             vk::DescriptorType::eSampledImage,
-            100
+            4096
         },
         vk::DescriptorPoolSize{
             vk::DescriptorType::eSampler,
@@ -1281,7 +1328,8 @@ export class VulkanRenderer{
         }
         };
         vk::DescriptorPoolCreateInfo poolInfo;
-        poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+        poolInfo.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet 
+            | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind)
         .setMaxSets(FRAMES_IN_FLIGHT * 50)
         .setPoolSizeCount(static_cast<uint32_t>(poolSizes.size()))
         .setPPoolSizes(poolSizes.data());
@@ -1730,6 +1778,13 @@ export class PipelineBuilder {
 
             
         }
+        // Because Spirv reflect doesnt *really* support descriptor indexing, this is your problem now. sorry
+        PipelineBuilder& setDescriptorIndexing(u32 setNumber, u32 descriptorCount = 1024)
+        {
+            descriptorIndexInfos.emplace_back(VulkanRenderer::DescriptorIndexingInfo(setNumber, descriptorCount));
+            std::println("Created indexed descriptor set");
+            return *this;
+        }
         PipelineBuilder& uploadTexture(Texture& texture, vk::MemoryPropertyFlagBits properties) {
 
 
@@ -1786,6 +1841,7 @@ export class PipelineBuilder {
         for (u32 setIndex = 0; setIndex < setCount; ++setIndex) {
             finalSetLayouts[setIndex].setIndex = setIndex;
         }
+   
 
     for (const auto& reflectedSet : descriptorSetLayouts) {
         auto& mergedSet = finalSetLayouts[reflectedSet.setIndex];
@@ -1807,10 +1863,13 @@ export class PipelineBuilder {
             }
 
         existing->stageFlags |= reflectedBinding.stageFlags;
+        
             }
         }
 
-        DescriptorSetData descriptorSetData;
+
+
+       DescriptorSetData descriptorSetData;
         descriptorSetData.layouts.reserve(setCount);
         descriptorSetData.descriptorSets.resize(setCount);
 
@@ -1819,19 +1878,56 @@ export class PipelineBuilder {
 
         for (u32 setIndex = 0; setIndex < setCount; ++setIndex) {
             auto& setInfo = finalSetLayouts[setIndex];
+            std::vector<vk::DescriptorBindingFlags> bindingFlags(setInfo.layoutBindings.size());
             setInfo.layoutInfo
             .setBindingCount(static_cast<u32>(setInfo.layoutBindings.size()))
             .setPBindings(setInfo.layoutBindings.data());
 
-        // Empty bindings create valid layouts for unused set numbers.
-        descriptorSetData.layouts.emplace_back(
-        renderer.getCurrentDevice(),
-        setInfo.layoutInfo);
+            // bad, do later
+            for (auto& indexSet : descriptorIndexInfos)
+            {
+                
+                if (indexSet.setIndex == setIndex)
+                {
+                    std::println("index set hit at set index {}", setIndex);
+                    if (setInfo.layoutBindings.empty()) {
+                        throw std::runtime_error("Cannot enable descriptor indexing on an empty descriptor set");
+                    }
+                    auto variableBinding = std::ranges::max_element(
+                        setInfo.layoutBindings, {}, &vk::DescriptorSetLayoutBinding::binding);
+                    const auto variableBindingIndex = static_cast<size_t>(
+                        std::distance(setInfo.layoutBindings.begin(), variableBinding));
+                    variableBinding->setDescriptorCount(indexSet.descriptorCount);
+                    bindingFlags[variableBindingIndex] =
+                        vk::DescriptorBindingFlagBits::eVariableDescriptorCount |
+                        vk::DescriptorBindingFlagBits::ePartiallyBound |
+                        vk::DescriptorBindingFlagBits::eUpdateAfterBind |
+                        vk::DescriptorBindingFlagBits::eUpdateUnusedWhilePending;
 
-            nonRaiiSetLayouts.emplace_back(*descriptorSetData.layouts.back());
-            descriptorSetData.descriptorSets[setIndex] =
-            renderer.allocateDescriptorSets(descriptorSetData.layouts.back(), FRAMES_IN_FLIGHT);
+                    setInfo.layoutInfo.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
+                    vk::DescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsCreateInfo;
+                    bindingFlagsCreateInfo.setBindingFlags(bindingFlags);
+                    setInfo.layoutInfo.setPNext(&bindingFlagsCreateInfo);
+
+                    descriptorSetData.layouts.emplace_back(
+                        renderer.getCurrentDevice(), setInfo.layoutInfo);
+                    nonRaiiSetLayouts.emplace_back(*descriptorSetData.layouts.back());
+                    descriptorSetData.descriptorSets[setIndex] = renderer.allocateDescriptorSets(
+                        descriptorSetData.layouts.back(), FRAMES_IN_FLIGHT, indexSet.descriptorCount);
+                    break;
+                }
             }
+
+            if (descriptorSetData.layouts.size() == setIndex) {
+                // Empty bindings create valid layouts for unused set numbers.
+                descriptorSetData.layouts.emplace_back(
+                    renderer.getCurrentDevice(), setInfo.layoutInfo);
+                nonRaiiSetLayouts.emplace_back(*descriptorSetData.layouts.back());
+                descriptorSetData.descriptorSets[setIndex] =
+                renderer.allocateDescriptorSets(descriptorSetData.layouts.back(), FRAMES_IN_FLIGHT);
+            }
+        }
+          
 
             pipelineConfig.pipelineLayoutInfo
             .setSetLayoutCount(setCount)
@@ -1876,7 +1972,10 @@ export class PipelineBuilder {
 
     private:
     
+       
        VulkanRenderer& renderer;
        Logger logger;
        PipelineConfig pipelineConfig;
+       std::vector<VulkanRenderer::DescriptorIndexingInfo> descriptorIndexInfos;
+
 };

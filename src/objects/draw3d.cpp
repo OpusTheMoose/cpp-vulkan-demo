@@ -95,6 +95,7 @@ export class Draw3D {
             .setShader("src/shaders/instance.spv", vk::ShaderStageFlagBits::eVertex, "vertMain")
             .setShader("src/shaders/instance.spv", vk::ShaderStageFlagBits::eFragment, "fragMain")
             .setVertexInputInfo(Vertex::getBindingDescription(),Vertex::getAttributeDescriptions())
+            .setDescriptorIndexing(2)
             .setViewportState(1, 1)
             .setMultisampleShading(false)
             .build();
@@ -121,7 +122,8 @@ export class Draw3D {
                 
                 renderer.uploadBuffer(TEMP_PIPELINE, lightBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
                renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
-                renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eCombinedImageSampler, 2, 0, frame);
+                renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eSampler, 2, 0, frame);
+                renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eSampledImage, 2, 1, frame);
 
                 renderer.uploadBuffer(linePipeline, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
                 
@@ -223,7 +225,8 @@ export class Draw3D {
         glm::mat4 modelMatrix = createModelMatrix(pos, glm::vec3{radius, radius, radius}, glm::quat(0.0f, 0.0f, 0.0f, 1.0));
             sphereInstanceData.emplace_back(
                         modelMatrix,
-                        createNormalMatrix(modelMatrix)
+                        createNormalMatrix(modelMatrix),
+                        0
                 );
                 
             return;
@@ -232,7 +235,8 @@ export class Draw3D {
         glm::mat4 modelMatrix = createModelMatrix(pos, scale, glm::quat(0.0f, 0.0f, 0.0f, 1.0));
             quadInstanceData.emplace_back(
                         modelMatrix,
-                        createNormalMatrix(modelMatrix)
+                        createNormalMatrix(modelMatrix),
+                        0
                 );
        }
 

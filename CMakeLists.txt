@@ -59,6 +59,7 @@ function(add_slang_shader_target TARGET)
               -target spirv
               -profile spirv_1_4
               -emit-spirv-directly
+              -warnings-disable 41012 # suppress warnings about implicit upgrades on spirv profile 1_4. 
               -fvk-use-entrypoint-name
               ${SHADER_ENTRY_POINTS}
               -o "${SPV_OUTPUT}"

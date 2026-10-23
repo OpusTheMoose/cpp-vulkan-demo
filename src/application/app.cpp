@@ -344,7 +344,7 @@ export class Application {
             initInfo.UseDynamicRendering = true;
             initInfo.PipelineInfoMain.RenderPass = nullptr;
             initInfo.PipelineInfoMain.Subpass = 0;
-            initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+            initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_8_BIT;
 
 
             initInfo.CheckVkResultFn = [](VkResult result) {

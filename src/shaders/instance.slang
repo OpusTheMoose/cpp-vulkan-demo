@@ -1,3 +1,4 @@
+
 struct VSInput {
     float3 inPosition;
     float3 inColor;
@@ -18,6 +19,7 @@ struct Light {
 struct Instances {
     float4x4 model;
     float4 normal[3];
+    int texId;
 };
 
 [[vk::binding(0,0 )]]
@@ -26,8 +28,12 @@ ConstantBuffer<UniformBuffer> ubo;
 [[vk::binding(0, 1)]]
 StructuredBuffer<Light> lights;
 
+
 [[vk::binding(0, 2)]]
-Sampler2D textureSampler;
+SamplerState sampler;
+
+[[vk::binding(1, 2)]]
+uniform Texture2D textures[];
 
 [[vk::binding(0, 3)]]
 StructuredBuffer<Instances> instanceModels;
@@ -38,6 +44,7 @@ struct VSOutput {
     float3 normal;
     float3 color;
     float2 texCoords;
+    int texId;
 }
 
 
@@ -60,9 +67,11 @@ VSOutput vertMain(VSInput input, uint instanceId: SV_InstanceID) {
     output.color = input.inColor;
     output.normal =  mul(normalMatrix, input.inNormal);
     output.texCoords = input.inTexCoords;
+    output.texId = instanceModels[instanceId].texId;
     return output;
 }
 
+//[require(SPV_EXT_descriptor_indexing)]
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
     float3 norm = normalize(vertIn.normal);
@@ -76,11 +85,12 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
     // specular
     float3 viewDir = normalize(-vertIn.worldPos);
     float3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(-viewDir, reflectDir), 0.0), 32);
+    float spec = pow(max(dot(viewDir, -reflectDir), 0.0), 32);
     float3 specular = 0.5 * spec * lights[0].color;
 
-
-    float3 result = (ambient + diffuse + specular) * textureSampler.Sample(vertIn.texCoords).xyz;
+    float3 result = (ambient + diffuse + specular) 
+    * textures[NonUniformResourceIndex(vertIn.texId)]
+      .Sample(sampler, vertIn.texCoords).rgb;
 
 
     return float4(result, 1.0);
