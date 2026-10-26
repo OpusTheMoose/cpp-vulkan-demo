@@ -25,6 +25,7 @@ struct ObjectData {
     std::array<MeterSecVec, num_of_objects> velocites;
     std::array<Kg, num_of_objects> masses;
     std::array<Meters, num_of_objects> radius;
+    std::array<u32, num_of_objects> textureID;
 };
 // Single version of ObjectData, just a non-owning view of a single piece of simulation data
 export struct SimulationObject {
@@ -33,6 +34,8 @@ export struct SimulationObject {
     double mass;
     double radius;
     size_t id;
+    u32 texID = 0;
+    
 };
 
 
@@ -53,6 +56,9 @@ export class GravitySimulation {
 
             objects.radius[0] = 6371000;
             objects.radius[1] = 1738000;
+
+            objects.textureID[0] = 1;
+            objects.textureID[1] = 0;
             
 
 
@@ -132,7 +138,8 @@ export class GravitySimulation {
                 objects.velocites[objectPos],
                 objects.masses[objectPos],
                 objects.radius[objectPos],
-                objectPos
+                objectPos,
+                objects.textureID[objectPos]
             };
         }
 

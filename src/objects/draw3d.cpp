@@ -5,6 +5,8 @@ module;
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/fwd.hpp>
 #include <optional>
+#include <string_view>
+#include <unordered_map>
 #include <variant>
 #include <print>
 #include <glm/glm.hpp>
@@ -22,6 +24,7 @@ import types;
 import mesh;
 import vulkan_renderer;
 import camera;
+import logger;
 
 namespace draw{
 
@@ -51,14 +54,14 @@ constexpr u32 MAX_LINE_COUNT = 8192;
 
 export class Draw3D {
     public:
-        Draw3D(VulkanRenderer &renderer_) : renderer(renderer_), pipelineBuilder(renderer), texture("textures/2k_mercury.jpg") {
+        Draw3D(VulkanRenderer &renderer_) : renderer(renderer_), pipelineBuilder(renderer) {
 
             for (auto &e : instanceBuffers)
             {
                e = renderer.createStorageBuffer(sizeof(InstanceData) * 1000);
             }
 
-            renderer.uploadTextureVulkan(texture, vk::MemoryPropertyFlagBits::eDeviceLocal);
+           
 
             lightBuffer = renderer.createStorageBuffer(sizeof(Light) * 50);
             uniformBuffer = renderer.createUniformBuffers(sizeof(UniformBufferObject));
@@ -121,9 +124,8 @@ export class Draw3D {
                 renderer.uploadBuffer(TEMP_PIPELINE, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
                 
                 renderer.uploadBuffer(TEMP_PIPELINE, lightBuffer, vk::DescriptorType::eStorageBuffer, 1, 0, frame);
-               renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
-                renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eSampler, 2, 0, frame);
-                renderer.uploadImageBuffer(TEMP_PIPELINE, texture, vk::DescriptorType::eSampledImage, 2, 1, frame);
+                renderer.uploadBuffer(TEMP_PIPELINE, instanceBuffers[PrimitiveType::SPHERE], vk::DescriptorType::eStorageBuffer, 3, 0, frame);
+          
 
                 renderer.uploadBuffer(linePipeline, uniformBuffer, vk::DescriptorType::eUniformBuffer, 0, 0, frame);
                 
@@ -221,22 +223,22 @@ export class Draw3D {
 
      
 
-       auto drawSphere(const glm::vec3 pos, const f32 radius) -> void {
+       auto drawSphere(const glm::vec3 pos, const f32 radius, u32 textureID = 0) -> void {
         glm::mat4 modelMatrix = createModelMatrix(pos, glm::vec3{radius, radius, radius}, glm::quat(0.0f, 0.0f, 0.0f, 1.0));
             sphereInstanceData.emplace_back(
                         modelMatrix,
                         createNormalMatrix(modelMatrix),
-                        0
+                        textureID
                 );
                 
             return;
        }
-        auto drawQuad(const glm::vec3 pos, const glm::vec3 scale) -> void {
+        auto drawQuad(const glm::vec3 pos, const glm::vec3 scale, u32 textureID = 0) -> void {
         glm::mat4 modelMatrix = createModelMatrix(pos, scale, glm::quat(0.0f, 0.0f, 0.0f, 1.0));
             quadInstanceData.emplace_back(
                         modelMatrix,
                         createNormalMatrix(modelMatrix),
-                        0
+                        textureID
                 );
        }
 
@@ -271,6 +273,21 @@ export class Draw3D {
     Mesh& getMesh(PrimitiveType type)
     {
         return meshes[type];
+    }
+
+    auto uploadTexture(const std::string& texturePath)
+    {
+        auto result = textures.try_emplace(texturePath, std::string_view(texturePath));
+        if (!result.second) {
+            logger.log(LogLevel::ERROR, std::format("Unable to create texture {}", texturePath));
+            return; }
+            //bruh
+         renderer.uploadTextureVulkan(result.first->second, vk::MemoryPropertyFlagBits::eDeviceLocal);
+         for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++)
+         {
+            renderer.uploadImageBuffer(TEMP_PIPELINE, result.first->second, vk::DescriptorType::eSampledImage, 2, 1, i);
+           
+         }
     }
     private:
 
@@ -400,6 +417,7 @@ export class Draw3D {
 
     VulkanRenderer& renderer;
     PipelineBuilder pipelineBuilder;
+    Logger logger;
     GraphicsPipeline TEMP_PIPELINE; 
     GraphicsPipeline linePipeline;
 
@@ -411,12 +429,12 @@ export class Draw3D {
     // Buffers for each frame in flight
     Buffer lightBuffer; 
     Buffer passBuffer; // UNUSED (for now aga)
-    Buffer uniformBuffer;  
-    
+    Buffer uniformBuffer; 
     //temp
     Buffer lineVertexBuffer;
     
-    Texture texture; // temporary, for testing
+
+    std::unordered_map<std::string, Texture> textures;
 
     std::vector<LineVertex> lineVertices;
     std::vector<InstanceData> sphereInstanceData;

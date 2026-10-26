@@ -87,11 +87,13 @@ export struct Texture {
     ~Texture() { if (pixels) stbi_image_free(pixels); }
     unsigned char* pixels = nullptr;
     i32 width, height, channels;
+    u32 texID;
     Buffer textureBuffer;
     vk::raii::Image image = nullptr;    
     vk::raii::DeviceMemory imageMemory = nullptr;
     vk::raii::ImageView imageView = nullptr;
     vk::raii::Sampler textureSampler = nullptr;
+    
 };
 
 struct DescriptorSetData {
@@ -425,6 +427,7 @@ export class VulkanRenderer{
         device.updateDescriptorSets(write, {});
     }
 
+
     auto uploadImageBuffer(GraphicsPipeline& pipeline, Texture& texture, vk::DescriptorType descriptorType, u32 set, u32 binding, u32 index)-> void 
     {
      
@@ -438,7 +441,7 @@ export class VulkanRenderer{
             .setDstBinding(binding)
             .setDescriptorCount(1)
             .setDescriptorType(descriptorType)
-            .setDstArrayElement(0)
+            .setDstArrayElement(texture.texID)
             .setPImageInfo(&imageInfo);
 
         device.updateDescriptorSets(write, {});
@@ -675,6 +678,8 @@ export class VulkanRenderer{
 
     auto uploadTextureVulkan(Texture& texture, vk::MemoryPropertyFlagBits memoryProperties) -> void {
         uploadImageTexture(texture, memoryProperties);
+        texture.texID = textureID;
+        textureID++;
     }
 
     private:
@@ -1563,6 +1568,7 @@ export class VulkanRenderer{
 
     u32 queueIndex = 0;
     u32 frameIndex = 0;
+    u32 textureID = 0; // its called reinventing the wheel!!!
     u32 minImageCount;
 
     vk::raii::SwapchainKHR swapChain = nullptr;
@@ -1782,7 +1788,7 @@ export class PipelineBuilder {
         PipelineBuilder& setDescriptorIndexing(u32 setNumber, u32 descriptorCount = 1024)
         {
             descriptorIndexInfos.emplace_back(VulkanRenderer::DescriptorIndexingInfo(setNumber, descriptorCount));
-            std::println("Created indexed descriptor set");
+            
             return *this;
         }
         PipelineBuilder& uploadTexture(Texture& texture, vk::MemoryPropertyFlagBits properties) {
@@ -1889,7 +1895,7 @@ export class PipelineBuilder {
                 
                 if (indexSet.setIndex == setIndex)
                 {
-                    std::println("index set hit at set index {}", setIndex);
+                    
                     if (setInfo.layoutBindings.empty()) {
                         throw std::runtime_error("Cannot enable descriptor indexing on an empty descriptor set");
                     }

@@ -90,7 +90,8 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
 
     float3 result = (ambient + diffuse + specular) 
     * textures[NonUniformResourceIndex(vertIn.texId)]
-      .Sample(sampler, vertIn.texCoords).rgb;
+    .Sample(sampler, float2(vertIn.texCoords.x, 1.0 - vertIn.texCoords.y)).rgb;
+    //  .Sample(sampler, vertIn.texCoords).rgb;
 
 
     return float4(result, 1.0);

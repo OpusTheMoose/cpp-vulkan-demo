@@ -178,6 +178,9 @@ export class Application {
 
             imguiSetup(window.getSDLWindow());
 
+            draw.uploadTexture("textures/2k_mercury.jpg");
+            draw.uploadTexture("textures/2k_earth.jpg");
+
 
 
             }
@@ -199,6 +202,8 @@ export class Application {
 
             bool gridToggleOn = true;
             bool paused = false;
+
+            
 
            while (window.isWindowOpen())
             {
@@ -268,7 +273,7 @@ export class Application {
                         
                         SimulationObject object = simulation.getObjectFromId(i);
                         
-                        draw.drawSphere(object.position, object.radius);
+                        draw.drawSphere(object.position, object.radius, object.texID);
                    
              
                     }
