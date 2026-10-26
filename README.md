@@ -1,6 +1,10 @@
-<h2>Overview</h2>
+## Overview
 This project is a simple gravity simulation meant to show off some Vulkan capaibilties. <br>
-![Simulation showing two oribiting bodies](/assets/simulation.gif)
+
+<p align="center">
+  <img src="assets/simulation.gif" alt="Simulation showing two orbiting bodies">
+</p>
+
 
 The project is split up into several core files: app.cpp, which runs all the logic between simulation.cpp and draw3d.cpp, and vulkan_renderer.cpp, which handle all the vulkan logic, with draw3d.cpp acting as an abstraction on top of it. vulkan_renderer.cpp was designed to be as loosely coupled and generic as possible, so it can hopefully be reused in my future projects.
 <h3>Shaders</h3>
